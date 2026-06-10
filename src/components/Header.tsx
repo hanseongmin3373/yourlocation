@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AuthNav from "@/components/AuthNav";
 
 export default function Header() {
   return (
@@ -13,7 +14,12 @@ export default function Header() {
             <p className="text-xs text-slate-500">IP 위치 조회 서비스</p>
           </div>
         </Link>
-        <p className="hidden text-xs text-slate-400 sm:block">yourlocation.co.kr</p>
+        <div className="flex items-center gap-3">
+          <p className="hidden text-xs text-slate-400 sm:block">
+            yourlocation.co.kr
+          </p>
+          <AuthNav />
+        </div>
       </div>
     </header>
   );

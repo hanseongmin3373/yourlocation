@@ -8,32 +8,8 @@ import IpSearchForm from "@/components/IpSearchForm";
 import KakaoMap from "@/components/KakaoMap";
 import LocationInfo from "@/components/LocationInfo";
 import UtilityLinks from "@/components/UtilityLinks";
+import UsageBanner, { updateUsageFromResponse } from "@/components/UsageBanner";
 import type { GeoLocationData, MapPosition, PoliceStationInfo } from "@/lib/types";
-
-async function reverseGeocode(
-  lat: number,
-  lng: number,
-): Promise<{
-  address: string;
-  dong: string;
-  sigungu: string;
-  sido: string;
-} | null> {
-  try {
-    const res = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
-    if (!res.ok) return null;
-    const json = await res.json();
-    if (!json.success) return null;
-    return {
-      address: json.address ?? "",
-      dong: json.dong ?? "",
-      sigungu: json.sigungu ?? "",
-      sido: json.sido ?? "",
-    };
-  } catch {
-    return null;
-  }
-}
 
 export default function HomePage() {
   const [clientIp, setClientIp] = useState<string>("");
@@ -85,6 +61,7 @@ export default function HomePage() {
       setLocationData(json.data);
       setMapPosition({ lat: json.data.lat, lng: json.data.lon });
       void fetchPoliceStation(json.data.lat, json.data.lon);
+      updateUsageFromResponse(json.remaining);
     } catch (err) {
       setError(err instanceof Error ? err.message : "조회에 실패했습니다.");
       setLocationData(null);
@@ -119,32 +96,51 @@ export default function HomePage() {
       async (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
-        const geo = await reverseGeocode(lat, lng);
-        const address =
-          geo?.address || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 
-        setLocationData({
-          ip: clientIp || "-",
-          country: "대한민국",
-          countryCode: "KR",
-          region: geo?.sido || "",
-          city: geo?.sigungu || "",
-          zip: "",
-          lat,
-          lon: lng,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          isp: "",
-          org: "",
-          as: "",
-          address,
-          dong: geo?.dong || "",
-          accuracyM: 50,
-          locationSource: "gps",
-          accuracyNote: "",
-        });
-        setMapPosition({ lat, lng });
-        void fetchPoliceStation(lat, lng);
-        setGeoLoading(false);
+        try {
+          const res = await fetch("/api/geolocation/gps", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lat, lng }),
+          });
+          const json = await res.json();
+
+          if (!json.success) {
+            throw new Error(json.error || "GPS 조회에 실패했습니다.");
+          }
+
+          const address =
+            json.address || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+          setLocationData({
+            ip: clientIp || "-",
+            country: "대한민국",
+            countryCode: "KR",
+            region: json.sido || "",
+            city: json.sigungu || "",
+            zip: "",
+            lat,
+            lon: lng,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            isp: "",
+            org: "",
+            as: "",
+            address,
+            dong: json.dong || "",
+            accuracyM: 50,
+            locationSource: "gps",
+            accuracyNote: "",
+          });
+          setMapPosition({ lat, lng });
+          void fetchPoliceStation(lat, lng);
+          updateUsageFromResponse(json.remaining);
+        } catch (err) {
+          setError(
+            err instanceof Error ? err.message : "GPS 조회에 실패했습니다.",
+          );
+        } finally {
+          setGeoLoading(false);
+        }
       },
       () => {
         setError("위치 권한이 거부되었거나 위치를 가져올 수 없습니다.");
@@ -168,6 +164,7 @@ export default function HomePage() {
       <div className="mx-auto max-w-5xl px-4 py-3 sm:px-6">
         <div className="mb-3 space-y-2">
           <UtilityLinks ip={clientIp} />
+          <UsageBanner />
           {clientIp && <IpBanner ip={clientIp} />}
         </div>
 

@@ -24,6 +24,8 @@ export interface GeoApiResponse {
   success: boolean;
   data?: GeoLocationData;
   error?: string;
+  remaining?: number | null;
+  isMember?: boolean;
 }
 
 export interface ClientIpResponse {
