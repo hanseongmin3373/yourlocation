@@ -8,7 +8,7 @@ import IpSearchForm from "@/components/IpSearchForm";
 import KakaoMap from "@/components/KakaoMap";
 import LocationInfo from "@/components/LocationInfo";
 import UtilityLinks from "@/components/UtilityLinks";
-import type { GeoLocationData, MapPosition } from "@/lib/types";
+import type { GeoLocationData, MapPosition, PoliceStationInfo } from "@/lib/types";
 
 async function reverseGeocode(
   lat: number,
@@ -34,6 +34,27 @@ export default function HomePage() {
   const [geoLoading, setGeoLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [infoTitle, setInfoTitle] = useState("위치 정보");
+  const [policeStation, setPoliceStation] = useState<PoliceStationInfo | null>(
+    null,
+  );
+  const [policeLoading, setPoliceLoading] = useState(false);
+
+  const fetchPoliceStation = useCallback(async (lat: number, lng: number) => {
+    setPoliceLoading(true);
+    setPoliceStation(null);
+
+    try {
+      const res = await fetch(
+        `/api/nearest-police-station?lat=${lat}&lng=${lng}`,
+      );
+      const json = await res.json();
+      setPoliceStation(json.success ? json.data : null);
+    } catch {
+      setPoliceStation(null);
+    } finally {
+      setPoliceLoading(false);
+    }
+  }, []);
 
   const fetchIpLocation = useCallback(async (ip: string) => {
     setLoading(true);
@@ -52,14 +73,16 @@ export default function HomePage() {
 
       setLocationData(json.data);
       setMapPosition({ lat: json.data.lat, lng: json.data.lon });
+      void fetchPoliceStation(json.data.lat, json.data.lon);
     } catch (err) {
       setError(err instanceof Error ? err.message : "조회에 실패했습니다.");
       setLocationData(null);
       setMapPosition(null);
+      setPoliceStation(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchPoliceStation]);
 
   useEffect(() => {
     fetch("/api/ip")
@@ -105,6 +128,7 @@ export default function HomePage() {
           address,
         });
         setMapPosition({ lat, lng });
+        void fetchPoliceStation(lat, lng);
         setGeoLoading(false);
       },
       () => {
@@ -199,6 +223,7 @@ export default function HomePage() {
         <KakaoMap
           position={mapPosition}
           label={locationData?.address}
+          policeStation={policeStation}
           heightClass="h-[50vh] min-h-[320px]"
           fullBleed
         />
@@ -209,6 +234,8 @@ export default function HomePage() {
           data={locationData}
           loading={loading || geoLoading}
           title={infoTitle}
+          policeStation={policeStation}
+          policeLoading={policeLoading}
         />
       </main>
 

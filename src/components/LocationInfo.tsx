@@ -1,9 +1,11 @@
-import type { GeoLocationData } from "@/lib/types";
+import type { GeoLocationData, PoliceStationInfo } from "@/lib/types";
 
 interface LocationInfoProps {
   data: GeoLocationData | null;
   loading?: boolean;
   title?: string;
+  policeStation?: PoliceStationInfo | null;
+  policeLoading?: boolean;
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
@@ -21,6 +23,8 @@ export default function LocationInfo({
   data,
   loading,
   title = "위치 정보",
+  policeStation,
+  policeLoading,
 }: LocationInfoProps) {
   if (loading) {
     return (
@@ -64,6 +68,39 @@ export default function LocationInfo({
         <InfoRow label="ISP" value={data.isp} />
         <InfoRow label="조직" value={data.org} />
       </dl>
+
+      <div className="mt-5 border-t border-slate-100 pt-4">
+        <h3 className="mb-3 text-sm font-bold text-slate-900">
+          관할 경찰서 (가장 가까운 곳)
+        </h3>
+        {policeLoading ? (
+          <div className="space-y-2">
+            <div className="h-5 animate-pulse rounded bg-slate-100" />
+            <div className="h-5 w-2/3 animate-pulse rounded bg-slate-100" />
+          </div>
+        ) : policeStation ? (
+          <dl className="space-y-3">
+            <InfoRow label="경찰서" value={policeStation.name} />
+            <InfoRow label="주소" value={policeStation.address} />
+            <InfoRow label="전화" value={policeStation.phone} />
+            <InfoRow
+              label="거리"
+              value={
+                policeStation.distanceM >= 1000
+                  ? `${(policeStation.distanceM / 1000).toFixed(1)} km`
+                  : `${policeStation.distanceM} m`
+              }
+            />
+          </dl>
+        ) : (
+          <p className="text-sm text-slate-500">
+            해당 위치 근처 경찰서 정보를 찾을 수 없습니다.
+          </p>
+        )}
+        <p className="mt-3 text-xs text-slate-400">
+          IP 기반 추정 위치 기준이며, 실제 관할과 다를 수 있습니다.
+        </p>
+      </div>
     </section>
   );
 }

@@ -28,3 +28,12 @@ export interface MapPosition {
   lat: number;
   lng: number;
 }
+
+export interface PoliceStationInfo {
+  name: string;
+  address: string;
+  phone: string;
+  distanceM: number;
+  lat: number;
+  lng: number;
+}
