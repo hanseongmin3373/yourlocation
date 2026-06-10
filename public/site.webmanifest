@@ -1,0 +1,17 @@
+{
+  "name": "YourLocation - IP 위치 조회",
+  "short_name": "YourLocation",
+  "description": "IP 주소로 위치를 조회하는 무료 서비스",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
