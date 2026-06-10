@@ -13,12 +13,23 @@ import type { GeoLocationData, MapPosition, PoliceStationInfo } from "@/lib/type
 async function reverseGeocode(
   lat: number,
   lng: number,
-): Promise<string | null> {
+): Promise<{
+  address: string;
+  dong: string;
+  sigungu: string;
+  sido: string;
+} | null> {
   try {
     const res = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
     if (!res.ok) return null;
     const json = await res.json();
-    return json.address ?? null;
+    if (!json.success) return null;
+    return {
+      address: json.address ?? "",
+      dong: json.dong ?? "",
+      sigungu: json.sigungu ?? "",
+      sido: json.sido ?? "",
+    };
   } catch {
     return null;
   }
@@ -108,16 +119,16 @@ export default function HomePage() {
       async (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
+        const geo = await reverseGeocode(lat, lng);
         const address =
-          (await reverseGeocode(lat, lng)) ||
-          `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+          geo?.address || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 
         setLocationData({
           ip: clientIp || "-",
           country: "대한민국",
           countryCode: "KR",
-          region: "",
-          city: "",
+          region: geo?.sido || "",
+          city: geo?.sigungu || "",
           zip: "",
           lat,
           lon: lng,
@@ -126,6 +137,10 @@ export default function HomePage() {
           org: "",
           as: "",
           address,
+          dong: geo?.dong || "",
+          accuracyM: 50,
+          locationSource: "gps",
+          accuracyNote: "",
         });
         setMapPosition({ lat, lng });
         void fetchPoliceStation(lat, lng);
@@ -181,8 +196,10 @@ export default function HomePage() {
             </div>
           </div>
           <p className="mt-2 text-xs text-amber-700/90">
-            제공되는 위치 서비스는 법적 효력이 없으며 정확한 위치를 보장하지
-            않으므로 참고 목적으로만 사용하시기 바랍니다.
+            IP 위치는 통신사 기준 추정이라 동(洞) 단위 오차가 큽니다. 상도동 등
+            정확한 위치는{" "}
+            <strong className="font-semibold">「현재 위치 확인」</strong>(GPS)을
+            이용하세요.
           </p>
         </section>
 
@@ -224,6 +241,7 @@ export default function HomePage() {
           position={mapPosition}
           label={locationData?.address}
           policeStation={policeStation}
+          accuracyRadiusM={locationData?.accuracyM ?? 2500}
           heightClass="h-[50vh] min-h-[320px]"
           fullBleed
         />

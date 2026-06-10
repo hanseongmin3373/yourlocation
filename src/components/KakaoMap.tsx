@@ -9,9 +9,11 @@ interface KakaoMapProps {
   policeStation?: PoliceStationInfo | null;
   heightClass?: string;
   fullBleed?: boolean;
+  /** IP 추정 오차 반경(미터). GPS는 50~100m 권장 */
+  accuracyRadiusM?: number;
 }
 
-const IP_CIRCLE_RADIUS = 800;
+const DEFAULT_IP_CIRCLE_RADIUS = 2500;
 const CURSOR_CIRCLE_RADIUS = 400;
 
 function loadKakaoMapScript(appKey: string): Promise<void> {
@@ -48,6 +50,7 @@ export default function KakaoMap({
   policeStation,
   heightClass = "h-[50vh] min-h-[280px]",
   fullBleed = false,
+  accuracyRadiusM = DEFAULT_IP_CIRCLE_RADIUS,
 }: KakaoMapProps) {
   const frameClass = fullBleed
     ? `${heightClass} w-full`
@@ -119,7 +122,7 @@ export default function KakaoMap({
 
     const ipCircle = new kakao.maps.Circle({
       center,
-      radius: IP_CIRCLE_RADIUS,
+      radius: accuracyRadiusM,
       strokeWeight: 2,
       strokeColor: "#2563eb",
       strokeOpacity: 0.85,
@@ -229,7 +232,7 @@ export default function KakaoMap({
         mousemoveHandlerRef.current = null;
       }
     };
-  }, [ready, position, label, policeStation]);
+  }, [ready, position, label, policeStation, accuracyRadiusM]);
 
   if (error) {
     const isMissingKey = error.includes("설정되지 않았습니다");
@@ -274,7 +277,8 @@ export default function KakaoMap({
     <div className="relative">
       <div ref={mapRef} className={frameClass} aria-label="카카오맵" />
       <p className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-3 py-1 text-[11px] text-slate-600 shadow-sm">
-        파란 원: IP 추정 위치 · 초록 원: 마우스 위치 (지도 위에서 이동)
+        파란 원: IP/GPS 추정 범위(약 {Math.round(accuracyRadiusM / 100) / 10}
+        km) · 초록 원: 마우스 위치
       </p>
     </div>
   );

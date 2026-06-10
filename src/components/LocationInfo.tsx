@@ -56,6 +56,16 @@ export default function LocationInfo({
       <dl className="space-y-3">
         <InfoRow label="IP 주소" value={data.ip} />
         <InfoRow label="주소" value={data.address} />
+        {data.dong && <InfoRow label="행정동" value={data.dong} />}
+        {data.accuracyM && data.locationSource === "ip" && (
+          <InfoRow
+            label="추정 오차"
+            value={`약 ±${Math.round(data.accuracyM / 100) / 10} km (IP 기반)`}
+          />
+        )}
+        {data.locationSource === "gps" && (
+          <InfoRow label="위치 방식" value="GPS (고정밀)" />
+        )}
         <InfoRow
           label="위도 / 경도"
           value={`${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}`}
@@ -68,6 +78,12 @@ export default function LocationInfo({
         <InfoRow label="ISP" value={data.isp} />
         <InfoRow label="조직" value={data.org} />
       </dl>
+
+      {data.accuracyNote && data.locationSource === "ip" && (
+        <p className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
+          {data.accuracyNote}
+        </p>
+      )}
 
       <div className="mt-5 border-t border-slate-100 pt-4">
         <h3 className="mb-3 text-sm font-bold text-slate-900">
