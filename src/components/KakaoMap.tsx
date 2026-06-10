@@ -7,6 +7,7 @@ interface KakaoMapProps {
   position: MapPosition | null;
   label?: string;
   heightClass?: string;
+  fullBleed?: boolean;
 }
 
 function loadKakaoMapScript(appKey: string): Promise<void> {
@@ -39,7 +40,11 @@ export default function KakaoMap({
   position,
   label,
   heightClass = "h-[50vh] min-h-[280px]",
+  fullBleed = false,
 }: KakaoMapProps) {
+  const frameClass = fullBleed
+    ? `${heightClass} w-full`
+    : `${heightClass} w-full overflow-hidden rounded-2xl border border-slate-200`;
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<unknown>(null);
   const markerRef = useRef<unknown>(null);
@@ -150,10 +155,6 @@ export default function KakaoMap({
   }
 
   return (
-    <div
-      ref={mapRef}
-      className={`${heightClass} w-full overflow-hidden rounded-2xl border border-slate-200`}
-      aria-label="카카오맵"
-    />
+    <div ref={mapRef} className={frameClass} aria-label="카카오맵" />
   );
 }
