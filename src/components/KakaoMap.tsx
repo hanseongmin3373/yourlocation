@@ -6,6 +6,7 @@ import type { MapPosition } from "@/lib/types";
 interface KakaoMapProps {
   position: MapPosition | null;
   label?: string;
+  heightClass?: string;
 }
 
 function loadKakaoMapScript(appKey: string): Promise<void> {
@@ -34,7 +35,11 @@ function loadKakaoMapScript(appKey: string): Promise<void> {
   });
 }
 
-export default function KakaoMap({ position, label }: KakaoMapProps) {
+export default function KakaoMap({
+  position,
+  label,
+  heightClass = "h-[50vh] min-h-[280px]",
+}: KakaoMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<unknown>(null);
   const markerRef = useRef<unknown>(null);
@@ -107,12 +112,28 @@ export default function KakaoMap({ position, label }: KakaoMapProps) {
   }, [ready, position, label]);
 
   if (error) {
+    const isMissingKey = error.includes("설정되지 않았습니다");
     return (
-      <div className="flex h-full min-h-[280px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center text-sm text-slate-500">
+      <div
+        className={`flex ${heightClass} items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center text-sm text-slate-500`}
+      >
         {error}
         <br />
         <span className="mt-1 text-xs text-slate-400">
-          .env.local에 NEXT_PUBLIC_KAKAO_MAP_KEY를 설정해주세요.
+          {isMissingKey ? (
+            <>
+              Vercel → Settings → Environment Variables에{" "}
+              <strong>NEXT_PUBLIC_KAKAO_MAP_KEY</strong>(JavaScript 키)를
+              Production·Preview·Development 모두 체크 후 저장하고 Redeploy
+              해주세요.
+            </>
+          ) : (
+            <>
+              JavaScript 키가 맞는지, 카카오 Developers → Web 도메인에{" "}
+              yourlocation.co.kr / www.yourlocation.co.kr / yourlocation.vercel.app
+              이 등록됐는지, 카카오맵 사용 설정이 켜져 있는지 확인해주세요.
+            </>
+          )}
         </span>
       </div>
     );
@@ -120,7 +141,9 @@ export default function KakaoMap({ position, label }: KakaoMapProps) {
 
   if (!position) {
     return (
-      <div className="flex h-full min-h-[280px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-400">
+      <div
+        className={`flex ${heightClass} items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-400`}
+      >
         위치 정보가 표시되면 지도가 나타납니다
       </div>
     );
@@ -129,7 +152,7 @@ export default function KakaoMap({ position, label }: KakaoMapProps) {
   return (
     <div
       ref={mapRef}
-      className="h-full min-h-[280px] w-full overflow-hidden rounded-2xl border border-slate-200 sm:min-h-[360px]"
+      className={`${heightClass} w-full overflow-hidden rounded-2xl border border-slate-200`}
       aria-label="카카오맵"
     />
   );

@@ -34,7 +34,7 @@ export default function IpSearchForm({
           id="ip-search"
           type="text"
           inputMode="decimal"
-          placeholder="IP 주소를 입력하세요 (예: 8.8.8.8)"
+          placeholder="IP 주소를 입력하세요."
           value={ip}
           onChange={(e) => setIp(e.target.value)}
           className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
@@ -45,7 +45,7 @@ export default function IpSearchForm({
           disabled={loading || !ip.trim()}
           className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {loading ? "조회 중..." : "검색"}
+          {loading ? "조회 중..." : "주소검색"}
         </button>
       </div>
     </form>
