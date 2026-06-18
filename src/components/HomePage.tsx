@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import CurrentLocationButton from "@/components/CurrentLocationButton";
 import Header from "@/components/Header";
 import IpBanner from "@/components/IpBanner";
 import IpSearchForm from "@/components/IpSearchForm";
 import KakaoMap from "@/components/KakaoMap";
 import LocationInfo from "@/components/LocationInfo";
+import LocationRegisterHero from "@/components/LocationRegisterHero";
 import LocationRegisterModal from "@/components/LocationRegisterModal";
 import SiteFooter from "@/components/SiteFooter";
 import UtilityLinks from "@/components/UtilityLinks";
@@ -64,6 +65,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
   const [registerTotalCount, setRegisterTotalCount] = useState<number | null>(
     null,
   );
+  const autoGpsRequested = useRef(false);
 
   const fetchPoliceStation = useCallback(
     async (
@@ -308,7 +310,20 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
     setRegisterModalOpen(false);
     setRegisterError(null);
     setGpsPreview(null);
-  }, []);
+
+    if (clientIp && getLocationConsent() !== "registered" && !locationData) {
+      setLoading(true);
+      setError(null);
+      setInfoTitle("IP 위치 정보 (미등록 · 추정)");
+      void fetchRemoteIp(clientIp)
+        .catch((err) => {
+          setError(
+            err instanceof Error ? err.message : "조회에 실패했습니다.",
+          );
+        })
+        .finally(() => setLoading(false));
+    }
+  }, [clientIp, fetchRemoteIp, locationData]);
 
   const handleEraseRegistration = useCallback(async () => {
     if (
@@ -370,6 +385,27 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
   }, []);
 
   useEffect(() => {
+    if (
+      !registerModalOpen ||
+      isLocationRegistered ||
+      autoGpsRequested.current ||
+      !clientIp ||
+      typeof navigator === "undefined" ||
+      !navigator.geolocation
+    ) {
+      return;
+    }
+
+    autoGpsRequested.current = true;
+    void handleRequestLocation();
+  }, [
+    registerModalOpen,
+    isLocationRegistered,
+    clientIp,
+    handleRequestLocation,
+  ]);
+
+  useEffect(() => {
     let cancelled = false;
 
     void (async () => {
@@ -385,10 +421,20 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
         setClientIp(ip);
 
         const registered = getLocationConsent() === "registered";
+        const dismissed =
+          typeof sessionStorage !== "undefined" &&
+          sessionStorage.getItem(REGISTER_DISMISS_KEY) === "1";
+
+        if (!registered && !dismissed) {
+          setInfoTitle("GPS 위치 등록");
+          setLoading(false);
+          return;
+        }
+
         setLoading(true);
         setError(null);
         setInfoTitle(
-          registered ? "IP 위치 정보" : "IP 위치 정보 (미등록)",
+          registered ? "IP 위치 정보" : "IP 위치 정보 (미등록 · 추정)",
         );
 
         try {
@@ -409,7 +455,8 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
           !cancelled &&
           registered &&
           typeof navigator !== "undefined" &&
-          navigator.geolocation
+          navigator.geolocation &&
+          sessionStorage.getItem(DB_REFRESH_KEY) !== "1"
         ) {
           void fetchOwnIpWithGps(ip, { fast: true })
             .then((result) => {
@@ -464,28 +511,19 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
         onClose={handleCloseRegisterModal}
       />
 
+      <LocationRegisterHero
+        isRegistered={isLocationRegistered}
+        clientIp={clientIp}
+        onRegister={openRegisterModal}
+        crowdStatsRefresh={crowdStatsRefresh}
+      />
+
       <div className="mx-auto max-w-5xl px-4 py-3 sm:px-6">
         <div className="mb-3 space-y-2">
           <UtilityLinks ip={clientIp} />
           <UsageBanner />
           {clientIp && <IpBanner ip={clientIp} />}
         </div>
-
-        {!isLocationRegistered && !registerModalOpen && (
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-            <p className="text-sm text-amber-900">
-              IP·주소 검색은 위치 등록 후 이용할 수 있습니다. GPS 등록 후
-              주소를 확인하면 <strong>오차 없이</strong> 표시됩니다.
-            </p>
-            <button
-              type="button"
-              onClick={openRegisterModal}
-              className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-            >
-              위치 등록하기
-            </button>
-          </div>
-        )}
 
         <section className="mb-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -556,7 +594,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
               onClick={openRegisterModal}
               className="font-semibold underline hover:text-amber-900"
             >
-              GPS 위치 등록
+              위치 등록/재등록
             </button>
             을 권장합니다.
           </div>
@@ -619,7 +657,6 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
       </main>
 
       <SiteFooter
-        onReRegister={openRegisterModal}
         onEraseData={() => void handleEraseRegistration()}
         crowdStatsRefresh={crowdStatsRefresh}
       />
