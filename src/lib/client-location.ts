@@ -5,15 +5,11 @@ import { normalizeIp } from "./client-ip";
 import { qualifiesExactPin } from "./geo-accuracy";
 
 import {
-
   formatPreciseCoord,
-
+  getRegisterGpsPosition,
   getUltraPrecisePosition,
-
   getFastGpsPosition,
-
   gpsAccuracyM,
-
 } from "./ultra-gps";
 
 import type { GeoLocationData } from "./types";
@@ -201,11 +197,9 @@ async function reverseGeocode(lat: number, lon: number) {
 
 
 
-/** GPS 초정밀 좌표 미리보기 (다중 샘플) */
-
+/** GPS 좌표 미리보기 (등록 모달 — 빠른 fallback) */
 export async function previewGpsLocation(): Promise<GpsPreview> {
-
-  const pos = await getUltraPrecisePosition();
+  const pos = await getRegisterGpsPosition();
 
   const lat = pos.coords.latitude;
 

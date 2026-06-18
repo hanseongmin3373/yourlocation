@@ -99,7 +99,7 @@ export default function LocationRegisterHero({
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="mt-0.5 font-bold text-emerald-600">✓</span>
-                    mylocation 방식 — 도로명·지번 직접 확인
+                    도로명·지번 직접 확인
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="mt-0.5 font-bold text-emerald-600">✓</span>

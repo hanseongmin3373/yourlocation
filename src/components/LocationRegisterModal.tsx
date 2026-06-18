@@ -128,8 +128,8 @@ export default function LocationRegisterModal({
           * 자신의 현재 위치를 등록해 주세요!! *
         </p>
         <p className="mt-2 text-center text-xs text-slate-600">
-          mylocation·geolocation.com 방식처럼 <strong>GPS 확인 후 주소를 직접
-          검증</strong>합니다. 도로명·지번까지 저장되어 오차 없이 표시됩니다.
+          <strong>GPS 확인 후 주소를 직접 검증</strong>합니다. 도로명·지번까지
+          저장되어 오차 없이 표시됩니다.
         </p>
 
         {!preview && (
