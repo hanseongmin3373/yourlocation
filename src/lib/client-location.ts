@@ -2,8 +2,6 @@ import { formatAppliedAddress } from "./coord-validation";
 
 import { normalizeIp } from "./client-ip";
 
-import { qualifiesExactPin } from "./geo-accuracy";
-
 import {
   formatPreciseCoord,
   getRegisterGpsPosition,
@@ -273,10 +271,6 @@ export async function fetchOwnIpWithGps(
 
   const accuracyM = gpsAccuracyM(pos);
 
-  const exactPin = qualifiesExactPin({ gpsAccuracyM: accuracyM });
-
-
-
   const gpsRes = await fetch("/api/geolocation/gps", {
 
     method: "POST",
@@ -298,32 +292,6 @@ export async function fetchOwnIpWithGps(
     throw new Error(gpsJson.error || "GPS 주소 변환에 실패했습니다.");
 
   }
-
-
-
-  const preview: GpsPreview = {
-
-    lat,
-
-    lon: lng,
-
-    accuracyM,
-
-    address: gpsJson.address || `${formatPreciseCoord(lat)}, ${formatPreciseCoord(lng)}`,
-
-    appliedAddress: formatAppliedAddress(gpsJson.sido, gpsJson.sigungu, gpsJson.dong) || gpsJson.address,
-
-    dong: gpsJson.dong,
-
-    sido: gpsJson.sido,
-
-    sigungu: gpsJson.sigungu,
-
-  };
-
-
-
-  await submitLocationRegister(preview, undefined, "own-ip-gps");
 
 
 
@@ -367,29 +335,27 @@ export async function fetchOwnIpWithGps(
 
     roadAddress: gpsJson.address,
 
-    accuracyM: exactPin ? undefined : accuracyM,
+    accuracyM,
 
     locationSource: "gps",
 
-    accuracyNote: exactPin
+    accuracyNote: `GPS 미확인 ±${accuracyM}m — 주소 확인·등록 필요`,
 
-      ? `GPS 초정밀 ±${accuracyM}m`
+    geoProvider: "gps",
 
-      : `GPS 추정 ±${accuracyM}m — 등록 DB 반영`,
-
-    geoProvider: "crowd-db",
-
-    geoSources: ["crowd-db", "gps"],
+    geoSources: ["gps"],
 
     precisionScore: precisionFromGps(accuracyM),
 
-    confidenceLevel: exactPin ? "high" : "medium",
+    confidenceLevel: "medium",
 
     expertMode: true,
 
-    addressSource: "gps-ultra",
+    addressSource: "gps-preview",
 
-    exactPin,
+    exactPin: false,
+
+    userVerified: false,
 
   };
 
@@ -421,10 +387,6 @@ export async function fetchGpsOnly(
 
   const accuracyM = gpsAccuracyM(pos);
 
-  const exactPin = qualifiesExactPin({ gpsAccuracyM: accuracyM });
-
-
-
   const res = await fetch("/api/geolocation/gps", {
 
     method: "POST",
@@ -442,38 +404,6 @@ export async function fetchGpsOnly(
   if (!json.success) {
 
     throw new Error(json.error || "GPS 조회에 실패했습니다.");
-
-  }
-
-
-
-  const preview: GpsPreview = {
-
-    lat,
-
-    lon: lng,
-
-    accuracyM,
-
-    address: json.address || `${formatPreciseCoord(lat)}, ${formatPreciseCoord(lng)}`,
-
-    appliedAddress:
-
-      formatAppliedAddress(json.sido, json.sigungu, json.dong) || json.address,
-
-    dong: json.dong,
-
-    sido: json.sido,
-
-    sigungu: json.sigungu,
-
-  };
-
-
-
-  if (clientIp) {
-
-    await submitLocationRegister(preview, undefined, "gps-refresh");
 
   }
 
@@ -519,21 +449,19 @@ export async function fetchGpsOnly(
 
       sigungu: json.sigungu || "",
 
-      accuracyM: exactPin ? undefined : accuracyM,
+      accuracyM,
 
       locationSource: "gps",
 
-      accuracyNote: exactPin
-
-        ? `GPS 초정밀 ±${accuracyM}m · 등록 DB 반영`
-
-        : `GPS 추정 ±${accuracyM}m · 등록 DB 반영`,
+      accuracyNote: `GPS 미확인 ±${accuracyM}m — 주소 확인·등록 필요`,
 
       precisionScore: precisionFromGps(accuracyM),
 
-      confidenceLevel: exactPin ? "high" : "medium",
+      confidenceLevel: "medium",
 
-      exactPin,
+      exactPin: false,
+
+      userVerified: false,
 
     },
 

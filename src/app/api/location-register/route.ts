@@ -6,6 +6,7 @@ import {
 } from "@/lib/crowd-ip-db";
 import { formatAppliedAddress } from "@/lib/coord-validation";
 import { buildVerifiedRegistration } from "@/lib/gps-address-verify";
+import { invalidateIpLookupCache } from "@/lib/geo";
 import { resolveAddressFromCoords } from "@/lib/kakao-geocode";
 
 export const dynamic = "force-dynamic";
@@ -115,6 +116,8 @@ export async function POST(request: NextRequest) {
       userVerified,
     });
 
+    invalidateIpLookupCache(clientIp);
+
     return NextResponse.json({
       success: true,
       appliedAddress: result.appliedAddress,
@@ -150,6 +153,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   const erased = await eraseCrowdLocation(clientIp);
+  invalidateIpLookupCache(clientIp);
   return NextResponse.json({
     success: true,
     erased,

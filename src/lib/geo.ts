@@ -8,7 +8,6 @@ import {
   IP2LOCATION_CITY_ACCURACY_M,
   HIGH_CONFIDENCE_AGREEMENT_M,
   MAX_ALLOWED_ACCURACY_M,
-  qualifiesExactPin,
 } from "./geo-accuracy";
 import { isPrivateIp, normalizeIp } from "./client-ip";
 import {
@@ -102,6 +101,13 @@ function cacheAndReturn(ip: string, data: GeoLocationData, startedAt: number) {
   ipLookupCache.set(ip, clean);
   logLookupPerf(ip, startedAt);
   return clean;
+}
+
+/** 등록·삭제 후 IP 조회 캐시 무효화 */
+export function invalidateIpLookupCache(ip?: string): void {
+  if (ip) {
+    ipLookupCache.delete(normalizeIp(ip));
+  }
 }
 
 const FETCH_OPTS: RequestInit = {
@@ -749,16 +755,6 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
     ? fused.accuracyM
     : effectiveAccuracyM(fused.accuracyM, fused.spreadM);
 
-  const allowRoadAddressBase = Boolean(
-    fused.highConfidenceAgreement ||
-      (fused.trustLocalBin &&
-        (fused.spreadM ?? 0) <= IP2LOCATION_ALIGNED_ACCURACY_M) ||
-      (fused.independentProviderCount != null &&
-        fused.independentProviderCount >= 2 &&
-        (fused.spreadM ?? Infinity) <= IP2LOCATION_ALIGNED_ACCURACY_M &&
-        !fused.highDisagreement),
-  );
-
   if (isKr) {
     const trusted = resolveKrTrustedCity(
       fused,
@@ -817,8 +813,7 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
       prefetchedCoords = await resolveAddressFromCoords(anchorLat, anchorLon);
     }
 
-    const allowRoadAddress =
-      allowRoadAddressBase && !cityHintOverridesCoords;
+    const allowRoadAddress = false;
     const ipApiDistrict = (ipApi?.data as { district?: string } | undefined)
       ?.district;
     const ip2locDistrict = (ip2loc?.data as { district?: string } | undefined)
@@ -840,11 +835,7 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
       trustGeoCity,
       allowRoadAddress,
       prefetchedCoords,
-      preferFastPath:
-        isKr &&
-        Boolean(prefetchedCoords?.sigungu) &&
-        trustGeoCity &&
-        !cityHintOverridesCoords,
+      preferFastPath: false,
     });
     address = kr.address;
     roadAddress = kr.roadAddress;
@@ -885,55 +876,13 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
     }
   }
 
-  exactPin = qualifiesExactPin({
-    independentProviderCount: fused.independentProviderCount,
-    providerCount: fused.providers.length,
-    spreadM: fused.spreadM,
-    accuracyM: uncertaintyM,
-    trustLocalBin: fused.trustLocalBin,
-    addressAligned: isKr ? krAddressAligned : true,
-    highDisagreement: fused.highDisagreement,
-    isVpn: meta?.isVpn,
-    highConfidenceAgreement: fused.highConfidenceAgreement,
-  });
+  exactPin = false;
 
   if (isKr && cityHintOverridesCoords) {
     exactPin = false;
   }
 
-  if (exactPin && isKr) {
-    const sameCoords =
-      Math.abs(finalLat - anchorLat) < 1e-6 &&
-      Math.abs(finalLon - anchorLon) < 1e-6;
-    if (sameCoords && anchorAddress?.road) {
-      address = anchorAddress.road || anchorAddress.full;
-      roadAddress = anchorAddress.road || undefined;
-      legalAddress =
-        anchorAddress.legal !== address ? anchorAddress.legal : undefined;
-      dong = anchorAddress.dong || dong;
-      sido = anchorAddress.sido || sido;
-      sigungu = anchorAddress.sigungu || sigungu;
-      addressSource = addressSource || "coord2address";
-      finalLat = anchorLat;
-      finalLon = anchorLon;
-    } else {
-      const pinCoords = sameCoords
-        ? anchorAddress
-        : await resolveAddressFromCoords(finalLat, finalLon);
-      if (pinCoords) {
-        address = pinCoords.road || pinCoords.full;
-        roadAddress = pinCoords.road || undefined;
-        legalAddress =
-          pinCoords.legal !== address ? pinCoords.legal : undefined;
-        dong = pinCoords.dong || dong;
-        sido = pinCoords.sido || sido;
-        sigungu = pinCoords.sigungu || sigungu;
-        addressSource = "coord2address";
-        finalLat = anchorLat;
-        finalLon = anchorLon;
-      }
-    }
-  } else if (!exactPin && isKr) {
+  if (isKr) {
     roadAddress = undefined;
     legalAddress = undefined;
     dong = dong && trustGeoCity ? dong : undefined;

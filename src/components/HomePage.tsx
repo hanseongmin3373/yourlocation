@@ -13,8 +13,6 @@ import SiteFooter from "@/components/SiteFooter";
 import UtilityLinks from "@/components/UtilityLinks";
 import UsageBanner from "@/components/UsageBanner";
 import {
-  fetchGpsOnly,
-  fetchOwnIpWithGps,
   isOwnIpQuery,
   previewGpsLocation,
   submitLocationRegister,
@@ -25,7 +23,6 @@ import {
   displayAccuracyRadiusM,
   isPreciseLocation,
   MAX_ALLOWED_ACCURACY_M,
-  qualifiesExactPin,
 } from "@/lib/geo-accuracy";
 import type { SearchQueryType } from "@/lib/ip-validation";
 import {
@@ -174,16 +171,8 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
         }
 
         if (clientIp && isOwnIpQuery(query, clientIp)) {
-          setInfoTitle("IP 위치 정보");
+          setInfoTitle("내 IP 위치");
           await fetchRemoteIp(query);
-          if (isLocationRegistered) {
-            void fetchOwnIpWithGps(query, { fast: true })
-              .then((result) => {
-                setInfoTitle("내 IP 위치 (GPS 정밀)");
-                applyLocation(result.data, result.remaining);
-              })
-              .catch(() => {});
-          }
           return;
         }
 
@@ -250,13 +239,12 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
           throw new Error(result.error || "위치 등록에 실패했습니다.");
         }
 
-        const exactPin = qualifiesExactPin({
-          userVerified: preview.userVerified,
-          gpsAccuracyM: preview.userVerified ? undefined : preview.accuracyM,
-        });
+        const exactPin = Boolean(preview.userVerified);
 
-        markLocationRegistered();
-        setIsLocationRegistered(true);
+        if (preview.userVerified) {
+          markLocationRegistered();
+          setIsLocationRegistered(true);
+        }
         setRegisterModalOpen(false);
         setGpsPreview(null);
         setRegisterTotalCount(result.totalCount ?? null);
@@ -340,28 +328,10 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
     setRegisterModalOpen(true);
   }, []);
 
-  const handleCurrentLocation = useCallback(async () => {
-    if (!isLocationRegistered) {
-      openRegisterModal();
-      return;
-    }
-
-    setGeoLoading(true);
-    setError(null);
-    setInfoTitle("현재 위치 정보");
-
-    try {
-      const result = await fetchGpsOnly(clientIp);
-      applyLocation(result.data, result.remaining);
-      setCrowdStatsRefresh((n) => n + 1);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "GPS 조회에 실패했습니다.",
-      );
-    } finally {
-      setGeoLoading(false);
-    }
-  }, [applyLocation, clientIp, isLocationRegistered, openRegisterModal]);
+  const handleCurrentLocation = useCallback(() => {
+    openRegisterModal();
+    void handleRequestLocation();
+  }, [openRegisterModal, handleRequestLocation]);
 
   useEffect(() => {
     const registered = getLocationConsent() === "registered";
@@ -429,47 +399,22 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
         setError(null);
         setInfoTitle("내 IP 위치");
 
-        const hasGeo =
-          typeof navigator !== "undefined" && navigator.geolocation;
-
-        if (hasGeo) {
-          try {
-            const result = await fetchOwnIpWithGps(ip, { fast: true });
-            if (!cancelled) {
-              setInfoTitle("내 IP 위치 (GPS 등록)");
-              applyLocation(result.data, result.remaining);
-              setCrowdStatsRefresh((n) => n + 1);
-              sessionStorage.setItem(DB_REFRESH_KEY, "1");
-            }
-            return;
-          } catch {
-            // 등록 DB·IP 추정으로 fallback
-          }
-        }
-
         try {
           const data = await fetchRemoteIp(ip);
-          if (
-            !cancelled &&
-            hasGeo &&
-            data &&
-            !isPreciseLocation(data)
-          ) {
-            void fetchOwnIpWithGps(ip, { fast: true })
-              .then((result) => {
-                if (cancelled) return;
-                setInfoTitle("내 IP 위치 (GPS 등록)");
-                applyLocation(result.data, result.remaining);
-                setCrowdStatsRefresh((n) => n + 1);
-                sessionStorage.setItem(DB_REFRESH_KEY, "1");
-              })
-              .catch(() => {
-                if (cancelled) return;
-                setRegisterModalOpen(true);
-                setRegisterError(
-                  "GPS 위치를 확인할 수 없습니다. 위치 재등록을 진행해 주세요.",
-                );
-              });
+          if (!cancelled) {
+            if (data.userVerified) {
+              markLocationRegistered();
+              setIsLocationRegistered(true);
+              setInfoTitle("내 IP 위치 (확인됨 · 오차 없음)");
+            } else {
+              clearLocationConsent();
+              sessionStorage.removeItem(REGISTER_DISMISS_KEY);
+              setIsLocationRegistered(false);
+              setRegisterModalOpen(true);
+              setRegisterError(
+                "정확한 위치(오차 없음)를 위해 GPS 등록 후 주소를 확인해 주세요.",
+              );
+            }
           }
         } catch (err) {
           if (!cancelled) {

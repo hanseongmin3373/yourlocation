@@ -87,10 +87,10 @@ export default function LocationRegisterHero({
                   GPS로 내 위치를 등록해 주세요
                 </h2>
                 <p className="max-w-2xl text-sm leading-relaxed text-emerald-900 sm:text-base">
-                  IP만으로는 오차가 클 수 있습니다.{" "}
+                  IP만으로는 도로명까지 <strong>절대 정확할 수 없습니다</strong>.
+                  {" "}
                   <strong>GPS 허용 → 주소 확인 → 등록</strong>하면 본인 IP
-                  위치가 <strong>오차 없이</strong> 표시되고, IP·주소 검색도
-                  이용할 수 있습니다.
+                  위치가 <strong>오차 없이</strong> 표시됩니다.
                 </p>
                 <ul className="grid gap-1.5 text-sm text-emerald-800/90 sm:grid-cols-2">
                   <li className="flex items-start gap-2">

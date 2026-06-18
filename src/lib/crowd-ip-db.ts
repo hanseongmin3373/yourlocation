@@ -3,7 +3,7 @@ import {
   buildDistrictAddress,
   CROWD_CLUSTER_MAX_ACCURACY_M,
   CROWD_CLUSTER_MAX_SPREAD_M,
-  qualifiesExactPin,
+  VERIFIED_ZERO_ERROR_NOTE,
 } from "./geo-accuracy";
 import { haversineMeters } from "./geo-fusion";
 import { resolveAddressFromCoords } from "./kakao-geocode";
@@ -430,26 +430,30 @@ export async function lookupCrowdIpExact(
     })
     .catch(() => {});
 
-  const exactPin = qualifiesExactPin({
-    userVerified: exact.userVerified,
-    gpsAccuracyM: exact.userVerified ? undefined : exact.accuracyM,
-  });
+  const exactPin = Boolean(exact.userVerified);
+
+  const districtAddress =
+    buildDistrictAddress({
+      sido: exact.sido || undefined,
+      sigungu: exact.sigungu || undefined,
+      dong: exact.dong || undefined,
+      includeDong: Boolean(exact.dong),
+    }) || exact.appliedAddress;
+
+  const entryForDisplay = exact.userVerified
+    ? exact
+    : { ...exact, address: districtAddress };
 
   return toCrowdGeoData(
     queryIp,
-    exact,
+    entryForDisplay,
     exact.userVerified
-      ? "등록 DB — 사용자 확인 주소 (오차 없음)"
-      : exactPin
-        ? "등록 DB — 동일 IP GPS 실측 (오차 없음)"
-        : `등록 DB — 동일 IP GPS 등록 (±${Math.round(exact.accuracyM)}m)`,
-    exact.userVerified || exactPin ? 95 : 84,
+      ? VERIFIED_ZERO_ERROR_NOTE
+      : `등록 DB — 주소 미확인 (시·군·구 추정)`,
+    exact.userVerified ? 95 : 72,
     {
-      exactPin: exact.userVerified || exactPin,
-      accuracyM:
-        exact.userVerified || exactPin
-          ? undefined
-          : Math.round(exact.accuracyM),
+      exactPin,
+      accuracyM: exact.userVerified ? undefined : Math.max(Math.round(exact.accuracyM), 500),
     },
   );
 }

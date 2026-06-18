@@ -26,7 +26,10 @@ export const CROWD_CLUSTER_MAX_SPREAD_M = 500;
 export const CROWD_CLUSTER_MAX_ACCURACY_M = 30;
 
 export const ESTIMATED_IP_ACCURACY_NOTE =
-  "IP 추정 — GPS 위치 등록 시 오차 없음";
+  "IP 추정 (시·군·구) — 도로명·오차 없는 위치는 GPS 등록·주소 확인 필요";
+
+export const VERIFIED_ZERO_ERROR_NOTE =
+  "사용자 확인 주소 — 오차 없음";
 
 /** IP2Location 로컬 BIN 도시·구군급 추정 오차 */
 export const IP2LOCATION_CITY_ACCURACY_M = 3000;
@@ -94,20 +97,14 @@ export function buildDistrictAddress(opts: {
   return parts.filter(Boolean).join(" ");
 }
 
-/** 단일 핀·오차 원 없음 표시 */
+/** 오차 없음 표시 — 사용자가 주소를 직접 확인한 경우만 */
 export function isPreciseLocation(data: {
   exactPin?: boolean;
   accuracyM?: number;
   locationSource?: string;
   userVerified?: boolean;
 }): boolean {
-  if (data.userVerified || data.exactPin) return true;
-  if (data.locationSource === "gps") {
-    return (
-      data.accuracyM == null || data.accuracyM <= EXACT_GPS_ACCURACY_M
-    );
-  }
-  return Boolean(data.exactPin);
+  return Boolean(data.userVerified);
 }
 
 /** 지도 오차 원 반경 (최대 5km) */
@@ -118,7 +115,7 @@ export function displayAccuracyRadiusM(
   return Math.min(accuracyM, MAX_ALLOWED_ACCURACY_M);
 }
 
-/** 오차 없음 핀 — GPS·등록 DB·고신뢰 IP 융합 */
+/** 오차 없음 핀 — 사용자 확인 주소만 */
 export function qualifiesExactPin(opts: {
   crowdExactIp?: boolean;
   userVerified?: boolean;
@@ -133,43 +130,7 @@ export function qualifiesExactPin(opts: {
   isVpn?: boolean;
   highConfidenceAgreement?: boolean;
 }): boolean {
-  if (opts.userVerified) return true;
-  if (opts.crowdExactIp) return true;
-  if (
-    opts.gpsAccuracyM != null &&
-    opts.gpsAccuracyM <= EXACT_GPS_ACCURACY_M
-  ) {
-    return true;
-  }
-
-  if (opts.isVpn || opts.highDisagreement) return false;
-  if (!opts.addressAligned) return false;
-
-  if (opts.highConfidenceAgreement) return true;
-
-  if (
-    (opts.independentProviderCount ?? 0) >= HIGH_CONFIDENCE_PROVIDER_MIN &&
-    (opts.spreadM ?? Infinity) <= HIGH_CONFIDENCE_AGREEMENT_M
-  ) {
-    return true;
-  }
-
-  if (
-    opts.trustLocalBin &&
-    (opts.spreadM ?? Infinity) <= EXACT_PROVIDER_AGREEMENT_M
-  ) {
-    return true;
-  }
-
-  if (
-    (opts.independentProviderCount ?? 0) >= 2 &&
-    (opts.spreadM ?? Infinity) <= EXACT_PROVIDER_AGREEMENT_M &&
-    (opts.accuracyM ?? Infinity) <= IP2LOCATION_ALIGNED_ACCURACY_M
-  ) {
-    return true;
-  }
-
-  return false;
+  return Boolean(opts.userVerified);
 }
 
 /** 동일 좌표(200m 이내) 제공자는 1개로 취급 */
