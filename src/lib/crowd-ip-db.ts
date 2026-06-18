@@ -115,11 +115,14 @@ function toCrowdGeoData(
   opts: { exactPin: boolean; accuracyM?: number },
 ): GeoLocationData {
   const displayAddress =
-    opts.exactPin && entry.userVerified && entry.roadAddress
-      ? entry.roadAddress
-      : opts.exactPin
-        ? entry.address || entry.appliedAddress
-        : entry.address;
+    opts.exactPin && entry.userVerified
+      ? entry.roadAddress || entry.address || entry.appliedAddress
+      : buildDistrictAddress({
+          sido: entry.sido || undefined,
+          sigungu: entry.sigungu || undefined,
+          dong: entry.dong || undefined,
+          includeDong: Boolean(entry.dong),
+        }) || entry.appliedAddress || entry.address;
 
   return {
     ip: normalizeIp(ip),

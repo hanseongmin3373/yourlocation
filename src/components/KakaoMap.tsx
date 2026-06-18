@@ -119,11 +119,11 @@ export default function KakaoMap({
         center,
         radius: accuracyRadiusM,
         strokeWeight: 2,
-        strokeColor: "#d97706",
-        strokeOpacity: 0.85,
-        strokeStyle: "shortdash",
-        fillColor: "#fef3c7",
-        fillOpacity: 0.35,
+        strokeColor: "#2563eb",
+        strokeOpacity: 0.75,
+        strokeStyle: "solid",
+        fillColor: "#3b82f6",
+        fillOpacity: 0.22,
         zIndex: 1,
       });
       circle.setMap(map);

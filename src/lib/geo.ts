@@ -4,6 +4,7 @@ import {
   capPrecisionForAccuracy,
   effectiveAccuracyM,
   ESTIMATED_IP_ACCURACY_NOTE,
+  enforceZeroErrorPolicy,
   IP2LOCATION_ALIGNED_ACCURACY_M,
   IP2LOCATION_CITY_ACCURACY_M,
   HIGH_CONFIDENCE_AGREEMENT_M,
@@ -97,7 +98,9 @@ function normalizeGuForFast(name: string): string {
 }
 
 function cacheAndReturn(ip: string, data: GeoLocationData, startedAt: number) {
-  const clean = sanitizeGeoFields(data) as GeoLocationData;
+  const clean = enforceZeroErrorPolicy(
+    sanitizeGeoFields(data) as GeoLocationData,
+  );
   ipLookupCache.set(ip, clean);
   logLookupPerf(ip, startedAt);
   return clean;
@@ -616,7 +619,7 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
   const cached = ipLookupCache.get(queryIp);
   if (cached) {
     logLookupPerf(`${queryIp} (cache)`, startedAt);
-    return cached;
+    return enforceZeroErrorPolicy(cached);
   }
 
   const [crowd, ip2loc, ipApi, dbIpHint, ipinfo, kisaWhois] = await Promise.all([

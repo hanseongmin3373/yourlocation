@@ -1,5 +1,6 @@
 /** IP/GPS 위치 허용 최대 오차 (5km) */
 import { sanitizeGeoText } from "./geo-field-sanitize";
+import type { GeoLocationData } from "./types";
 
 export const MAX_ALLOWED_ACCURACY_M = 5000;
 
@@ -95,6 +96,92 @@ export function buildDistrictAddress(opts: {
     if (dong) parts.push(dong);
   }
   return parts.filter(Boolean).join(" ");
+}
+
+/** mylocation 스타일 — 시·군·구·동 (도로명 제외) */
+export function formatDistrictLocationLabel(data: {
+  sido?: string;
+  sigungu?: string;
+  dong?: string;
+  city?: string;
+  region?: string;
+  address?: string;
+}): string {
+  const district = buildDistrictAddress({
+    sido: data.sido || data.region,
+    sigungu: data.sigungu || data.city,
+    dong: data.dong,
+    includeDong: true,
+  });
+  if (district) return district;
+  return sanitizeGeoText(data.address) || "";
+}
+
+/**
+ * 모든 IP 조회 결과에 적용
+ * - userVerified: 오차 없음 (도로명·단일 핀)
+ * - 그 외: 동·구 추정 + 오차 원
+ */
+export function enforceZeroErrorPolicy(data: GeoLocationData): GeoLocationData {
+  if (data.userVerified) {
+    return {
+      ...data,
+      exactPin: true,
+      accuracyM: undefined,
+      address: data.roadAddress || data.address,
+      roadAddress: data.roadAddress || data.address,
+      accuracyNote: VERIFIED_ZERO_ERROR_NOTE,
+      locationSource: "pinpoint",
+      confidenceLevel: "high",
+    };
+  }
+
+  if (
+    data.addressSource === "kakao-search" ||
+    data.addressSource === "coord2address"
+  ) {
+    return {
+      ...data,
+      exactPin: true,
+      accuracyM: undefined,
+      locationSource: "pinpoint",
+      confidenceLevel: "high",
+    };
+  }
+
+  const districtAddress =
+    formatDistrictLocationLabel(data) ||
+    buildDistrictAddress({
+      sido: data.sido || data.region,
+      sigungu: data.sigungu || data.city,
+      dong: data.dong,
+      includeDong: Boolean(data.dong),
+    }) ||
+    data.address;
+
+  const isCrowd =
+    data.geoProvider === "crowd-db" ||
+    data.locationSource === "crowd" ||
+    data.geoSources?.includes("crowd-db");
+
+  const defaultAccuracy = isCrowd ? 800 : IP2LOCATION_CITY_ACCURACY_M;
+  const accuracyM = data.accuracyM ?? defaultAccuracy;
+
+  return {
+    ...data,
+    exactPin: false,
+    userVerified: undefined,
+    roadAddress: undefined,
+    legalAddress: undefined,
+    address: districtAddress,
+    accuracyM,
+    accuracyNote: isCrowd
+      ? "등록 DB 추정 — 동·구 단위 (해당 IP 미확인 등록)"
+      : ESTIMATED_IP_ACCURACY_NOTE,
+    locationSource: isCrowd ? "crowd" : "ip",
+    confidenceLevel:
+      accuracyM > MAX_ALLOWED_ACCURACY_M ? "low" : "medium",
+  };
 }
 
 /** 오차 없음 표시 — 사용자가 주소를 직접 확인한 경우만 */

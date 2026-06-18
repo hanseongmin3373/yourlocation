@@ -21,6 +21,8 @@ import {
 import { resolveVisitorIp } from "@/lib/detect-client-ip";
 import {
   displayAccuracyRadiusM,
+  enforceZeroErrorPolicy,
+  formatDistrictLocationLabel,
   isPreciseLocation,
   MAX_ALLOWED_ACCURACY_M,
 } from "@/lib/geo-accuracy";
@@ -98,12 +100,13 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
 
   const applyLocation = useCallback(
     (data: GeoLocationData, remaining?: number | null) => {
-      setLocationData(data);
-      setMapPosition({ lat: data.lat, lng: data.lon });
-      void fetchPoliceStation(data.lat, data.lon, {
-        sido: data.sido,
-        sigungu: data.sigungu,
-        dong: data.dong,
+      const normalized = enforceZeroErrorPolicy(data);
+      setLocationData(normalized);
+      setMapPosition({ lat: normalized.lat, lng: normalized.lon });
+      void fetchPoliceStation(normalized.lat, normalized.lon, {
+        sido: normalized.sido,
+        sigungu: normalized.sigungu,
+        dong: normalized.dong,
       });
       if (typeof remaining === "number") {
         window.dispatchEvent(
@@ -172,12 +175,22 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
 
         if (clientIp && isOwnIpQuery(query, clientIp)) {
           setInfoTitle("내 IP 위치");
-          await fetchRemoteIp(query);
+          const data = await fetchRemoteIp(query);
+          setInfoTitle(
+            data.userVerified
+              ? "내 IP 위치 (확인됨 · 오차 없음)"
+              : "내 IP 위치 (동·구 추정)",
+          );
           return;
         }
 
-        setInfoTitle("IP 정밀 분석");
-        await fetchRemoteIp(query);
+        setInfoTitle("IP 위치 조회");
+        const data = await fetchRemoteIp(query);
+        setInfoTitle(
+          data.userVerified
+            ? "IP 위치 (등록 DB · 확인됨 · 오차 없음)"
+            : "IP 위치 (동·구 추정)",
+        );
       } catch (err) {
         if (
           clientIp &&
@@ -447,12 +460,11 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
     isPrecise ? undefined : locationData?.accuracyM,
   );
 
-  const locationSummary =
-    locationData?.address ||
-    [locationData?.city, locationData?.region, locationData?.country]
-      .filter(Boolean)
-      .join(" ") ||
-    null;
+  const locationSummary = locationData
+    ? isPrecise
+      ? locationData.address
+      : formatDistrictLocationLabel(locationData) || locationData.address
+    : null;
 
   return (
     <div className="min-h-screen bg-white">
@@ -471,7 +483,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
       />
 
       <LocationRegisterHero
-        isRegistered={isLocationRegistered}
+        isRegistered={Boolean(locationData?.userVerified)}
         clientIp={clientIp}
         onRegister={openRegisterModal}
         crowdStatsRefresh={crowdStatsRefresh}
@@ -510,8 +522,8 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
                         : "(좌표 고정)"}
                     </span>
                   ) : locationData ? (
-                    <span className="ml-1 text-xs font-medium text-amber-700">
-                      (추정 위치
+                    <span className="ml-1 text-xs font-medium text-blue-700">
+                      (동·구 추정
                       {locationData.accuracyM
                         ? ` ±${Math.round(locationData.accuracyM)}m`
                         : ""}
@@ -534,22 +546,10 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
               </>
             ) : (
               <>
-                <strong className="font-semibold">IP 추정 모드</strong> —
-                다중 GeoIP 융합 결과이며 오차가 5km를 초과할 수 있습니다.{" "}
-                {isLocationRegistered ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={openRegisterModal}
-                      className="font-semibold text-emerald-700 underline hover:text-emerald-900"
-                    >
-                      위치 재등록
-                    </button>
-                    으로 GPS 정밀 위치를 확인하세요.
-                  </>
-                ) : (
-                  <>정밀 위치는 GPS 등록이 필요합니다.</>
-                )}
+                <strong className="font-semibold">동·구 추정 모드</strong> —
+                mylocation과 같이 시·군·구·동 단위로 표시합니다. 도로명·오차
+                없는 위치는 해당 IP의 GPS 등록·주소 확인 데이터가 있을 때만
+                제공됩니다.
               </>
             )}
           </p>
@@ -610,7 +610,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
           position={mapPosition}
           label={isPrecise ? locationData?.address : undefined}
           policeStation={policeStation}
-          mapLevel={isPrecise ? 2 : 5}
+          mapLevel={isPrecise ? 2 : 6}
           accuracyRadiusM={mapAccuracyRadius}
           exactPin={isPrecise}
           heightClass="h-[50vh] min-h-[320px]"
