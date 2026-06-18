@@ -7,7 +7,7 @@ export default function UsageBanner() {
   const [remaining, setRemaining] = useState<number | null>(null);
   const [isMember, setIsMember] = useState(false);
   const [isPendingMember, setIsPendingMember] = useState(false);
-  const [limit, setLimit] = useState(10);
+  const [limit, setLimit] = useState(100);
 
   function loadUsage() {
     fetch("/api/usage")

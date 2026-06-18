@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { isUnlimitedUser, type SessionUser } from "@/lib/auth";
 import { createMemoryCache } from "@/lib/memory-cache";
 
-export const ANON_DAILY_LIMIT = 10;
+export const ANON_DAILY_LIMIT = 100;
 
 const remainingCache = createMemoryCache<number>(15_000, 500);
 

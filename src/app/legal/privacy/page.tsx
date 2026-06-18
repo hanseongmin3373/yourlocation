@@ -53,7 +53,7 @@ export default function PrivacyPage() {
             </h3>
             <ul className="mt-1 list-disc space-y-1 pl-5">
               <li>
-                접속 IP 주소 및 당일 조회 횟수 (일 10회 제한 목적, 조회 이력은
+                접속 IP 주소 및 당일 조회 횟수 (일 100회 제한 목적, 조회 이력은
                 저장하지 않음)
               </li>
             </ul>
@@ -75,7 +75,7 @@ export default function PrivacyPage() {
             <strong>회원의 IP·GPS 조회 이력 제공 및 저장</strong> (마이페이지
             조회 이력 기능)
           </li>
-          <li>비회원 일일 조회 횟수 제한 (10회/일)</li>
+          <li>비회원 일일 조회 횟수 제한 (100회/일)</li>
           <li>서비스 운영, 장애 대응, 부정 이용 방지</li>
         </ul>
       </section>
