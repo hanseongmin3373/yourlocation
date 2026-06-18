@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import CrowdDbBanner from "@/components/CrowdDbBanner";
 import CurrentLocationButton from "@/components/CurrentLocationButton";
 import Header from "@/components/Header";
 import IpBanner from "@/components/IpBanner";
@@ -469,10 +468,6 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
         <div className="mb-3 space-y-2">
           <UtilityLinks ip={clientIp} />
           <UsageBanner />
-          <CrowdDbBanner
-            refreshKey={crowdStatsRefresh}
-            onRegisterClick={openRegisterModal}
-          />
           {clientIp && <IpBanner ip={clientIp} />}
         </div>
 
@@ -626,6 +621,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
       <SiteFooter
         onReRegister={openRegisterModal}
         onEraseData={() => void handleEraseRegistration()}
+        crowdStatsRefresh={crowdStatsRefresh}
       />
     </div>
   );
