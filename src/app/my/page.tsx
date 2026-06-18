@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
+import SiteFooter from "@/components/SiteFooter";
 
 interface QueryItem {
   id: string;
@@ -14,13 +15,19 @@ interface QueryItem {
 }
 
 interface MyData {
-  user: { email: string; name: string | null };
+  user: {
+    email: string;
+    name: string | null;
+    isApproved: boolean;
+    role: string;
+  };
   queries: QueryItem[];
   total: number;
 }
 
 function formatType(type: string) {
   if (type === "gps_lookup") return "GPS 위치";
+  if (type === "address_search") return "주소 검색";
   return "IP 조회";
 }
 
@@ -90,6 +97,13 @@ export default function MyPage() {
           </div>
         </div>
 
+        {data && !data.user.isApproved && data.user.role !== "ADMIN" && (
+          <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            관리자 승인 대기 중입니다. 승인 후 무제한 조회 및 이력 저장이
+            시작됩니다.
+          </div>
+        )}
+
         {loading && (
           <p className="text-sm text-slate-500">이력을 불러오는 중...</p>
         )}
@@ -144,6 +158,8 @@ export default function MyPage() {
           </div>
         )}
       </main>
+
+      <SiteFooter />
     </div>
   );
 }

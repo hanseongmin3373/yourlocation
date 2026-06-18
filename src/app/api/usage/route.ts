@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, isUnlimitedUser } from "@/lib/auth";
 import { ANON_DAILY_LIMIT, getAnonymousRemaining } from "@/lib/query-access";
-import { getClientIp } from "@/lib/geo";
+import { getClientIp } from "@/lib/client-ip";
 
 export async function GET(request: Request) {
   try {
     const user = await getSessionUser();
-    if (user) {
+    if (user && isUnlimitedUser(user)) {
       return NextResponse.json({
         success: true,
         isMember: true,
+        isPendingMember: false,
         remaining: null,
         limit: null,
       });
@@ -21,6 +22,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       isMember: false,
+      isPendingMember: !!user,
       remaining,
       limit: ANON_DAILY_LIMIT,
     });

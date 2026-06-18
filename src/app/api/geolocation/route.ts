@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
+import { normalizeIp } from "@/lib/client-ip";
 import { assertQueryAllowed, recordQuery } from "@/lib/query-access";
 import { getClientIp, isValidIp, lookupIp } from "@/lib/geo";
 import type { GeoApiResponse } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   const ip = request.nextUrl.searchParams.get("ip");
 
@@ -24,9 +26,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const user = await getSessionUser();
     const clientIp = getClientIp(request.headers);
-    const access = await assertQueryAllowed(user?.id ?? null, clientIp);
+    const user = await getSessionUser();
+    const [access, data] = await Promise.all([
+      assertQueryAllowed(user, clientIp),
+      lookupIp(trimmedIp),
+    ]);
 
     if (!access.allowed) {
       return NextResponse.json<GeoApiResponse>(
@@ -35,19 +40,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const data = await lookupIp(trimmedIp);
-    const recorded = await recordQuery({
-      userId: user?.id ?? null,
+    data.ip = normalizeIp(trimmedIp);
+
+    void recordQuery({
+      user,
       ip: clientIp,
       queryType: "ip_lookup",
       queryValue: trimmedIp,
       resultAddress: data.address,
-    });
+    }).catch(() => {});
+
+    const remaining =
+      access.remaining != null ? Math.max(0, access.remaining - 1) : null;
 
     return NextResponse.json({
       success: true,
       data,
-      remaining: recorded.remaining ?? access.remaining,
+      remaining,
       isMember: access.isMember,
     });
   } catch (error) {

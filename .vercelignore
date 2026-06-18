@@ -1,0 +1,6 @@
+agribid
+
+geo-data/.tmp-download/**
+
+geo-data/**/*.zip
+

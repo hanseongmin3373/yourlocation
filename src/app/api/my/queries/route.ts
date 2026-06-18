@@ -16,7 +16,12 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
-      user: { email: user.email, name: user.name },
+      user: {
+        email: user.email,
+        name: user.name,
+        isApproved: user.isApproved,
+        role: user.role,
+      },
       queries,
       total: queries.length,
     });

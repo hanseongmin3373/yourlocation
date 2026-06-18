@@ -10,11 +10,15 @@
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:push": "prisma db push",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "geo:update-db": "node scripts/setup-ip2location.mjs",
+    "police:update-db": "node scripts/setup-police-db.mjs",
+    "mylocation:import": "node scripts/import-mylocation.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.9.0",
     "bcryptjs": "^3.0.2",
+    "ip2location-nodejs": "^9.8.0",
     "jose": "^6.0.11",
     "next": "^15.3.3",
     "react": "^19.1.0",
@@ -29,6 +33,7 @@
     "@types/react-dom": "^19.1.5",
     "eslint": "^9.28.0",
     "eslint-config-next": "^15.3.3",
+    "pdf-parse": "^2.4.5",
     "postcss": "^8.5.4",
     "prisma": "^6.9.0",
     "tailwindcss": "^4.1.8",

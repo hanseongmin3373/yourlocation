@@ -1,3 +1,8 @@
+import {
+  ACCURACY_EXCEEDED_NOTE,
+  isPreciseLocation,
+  MAX_ALLOWED_ACCURACY_M,
+} from "@/lib/geo-accuracy";
 import type { GeoLocationData, PoliceStationInfo } from "@/lib/types";
 
 interface LocationInfoProps {
@@ -19,6 +24,19 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function confidenceLabel(level?: GeoLocationData["confidenceLevel"]): string {
+  if (level === "high") return "높음";
+  if (level === "medium") return "보통";
+  if (level === "low") return "낮음";
+  return "-";
+}
+
+function confidenceColor(level?: GeoLocationData["confidenceLevel"]): string {
+  if (level === "high") return "text-emerald-700 bg-emerald-50 border-emerald-200";
+  if (level === "medium") return "text-amber-800 bg-amber-50 border-amber-200";
+  return "text-slate-700 bg-slate-50 border-slate-200";
+}
+
 export default function LocationInfo({
   data,
   loading,
@@ -31,7 +49,7 @@ export default function LocationInfo({
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <h2 className="mb-4 text-lg font-bold text-slate-900">{title}</h2>
         <div className="space-y-3">
-          {Array.from({ length: 6 }).map((_, i) => (
+          {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="h-5 animate-pulse rounded bg-slate-100" />
           ))}
         </div>
@@ -50,25 +68,103 @@ export default function LocationInfo({
     );
   }
 
+  const precise = isPreciseLocation(data);
+  const lowAccuracy =
+    data.accuracyM != null && data.accuracyM > MAX_ALLOWED_ACCURACY_M;
+
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-      <h2 className="mb-4 text-lg font-bold text-slate-900">{title}</h2>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+        {data.expertMode && (
+          <span
+            className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+              precise
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-amber-200 bg-amber-50 text-amber-900"
+            }`}
+          >
+            {data.locationSource === "gps"
+              ? "GPS 고정"
+              : precise
+                ? "좌표 고정"
+                : "추정 위치"}
+          </span>
+        )}
+      </div>
+
+      {lowAccuracy && (
+        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <span className="font-semibold">{ACCURACY_EXCEEDED_NOTE}</span>
+          {data.accuracyM != null && (
+            <span className="mt-1 block text-xs text-amber-800">
+              추정 오차 약 {(data.accuracyM / 1000).toFixed(1)}km
+            </span>
+          )}
+        </div>
+      )}
+
+      {data.precisionScore != null && !precise && data.locationSource === "ip" && (
+        <div
+          className={`mb-4 rounded-xl border px-4 py-3 ${confidenceColor(data.confidenceLevel)}`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm font-semibold">
+              정밀도 {data.precisionScore}%
+            </span>
+            <span className="text-xs">
+              신뢰도 {confidenceLabel(data.confidenceLevel)}
+            </span>
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/60">
+            <div
+              className="h-full rounded-full bg-current opacity-60 transition-all"
+              style={{ width: `${data.precisionScore}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       <dl className="space-y-3">
         <InfoRow label="IP 주소" value={data.ip} />
-        <InfoRow label="주소" value={data.address} />
+        <InfoRow
+          label={precise ? "도로명 주소" : "행정 구역"}
+          value={data.address}
+        />
+        {data.legalAddress && (
+          <InfoRow label="지번 주소" value={data.legalAddress} />
+        )}
         {data.dong && <InfoRow label="행정동" value={data.dong} />}
-        {data.accuracyM && data.locationSource === "ip" && (
-          <InfoRow
-            label="추정 오차"
-            value={`약 ±${Math.round(data.accuracyM / 100) / 10} km (IP 기반)`}
-          />
+        {data.sido && <InfoRow label="시·도" value={data.sido} />}
+        {data.sigungu && <InfoRow label="시·군·구" value={data.sigungu} />}
+        <InfoRow
+          label="좌표 방식"
+          value={
+            precise
+              ? "주소·GPS 단일 좌표 (오차 원 없음)"
+              : `IP 추정${
+                  data.accuracyM != null
+                    ? ` · ±${
+                        data.accuracyM >= 1000
+                          ? `${(data.accuracyM / 1000).toFixed(1)}km`
+                          : `${Math.round(data.accuracyM)}m`
+                      }`
+                    : ""
+                }`
+          }
+        />
+        {data.geoSources && data.geoSources.length > 0 && (
+          <InfoRow label="융합 DB" value={data.geoSources.join(" + ")} />
+        )}
+        {data.addressSource && data.locationSource === "ip" && (
+          <InfoRow label="주소 출처" value={data.addressSource} />
         )}
         {data.locationSource === "gps" && (
-          <InfoRow label="위치 방식" value="GPS (고정밀)" />
+          <InfoRow label="위치 방식" value="GPS" />
         )}
         <InfoRow
           label="위도 / 경도"
-          value={`${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}`}
+          value={`${data.lat.toFixed(7)}, ${data.lon.toFixed(7)}`}
         />
         <InfoRow label="국가" value={`${data.country} (${data.countryCode})`} />
         <InfoRow label="지역" value={data.region} />
@@ -79,15 +175,29 @@ export default function LocationInfo({
         <InfoRow label="조직" value={data.org} />
       </dl>
 
-      {data.accuracyNote && data.locationSource === "ip" && (
-        <p className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
-          {data.accuracyNote}
-        </p>
-      )}
+      {data.accuracyNote &&
+        (data.locationSource === "ip" || data.locationSource === "crowd") && (
+          <p
+            className={`mt-4 rounded-xl border px-4 py-3 text-xs leading-relaxed ${
+              data.isVpn
+                ? "border-red-200 bg-red-50 text-red-900"
+                : lowAccuracy
+                  ? "border-amber-200 bg-amber-50 text-amber-900"
+                  : "border-violet-100 bg-violet-50 text-violet-900"
+            }`}
+          >
+            {data.isVpn && (
+              <span className="mb-1 block font-semibold">
+                VPN/프록시가 감지되었습니다 — 표시 위치가 실제와 다를 수 있습니다.
+              </span>
+            )}
+            {data.accuracyNote}
+          </p>
+        )}
 
       <div className="mt-5 border-t border-slate-100 pt-4">
         <h3 className="mb-3 text-sm font-bold text-slate-900">
-          관할 경찰서 (가장 가까운 곳)
+          관할 경찰관서 (경찰청 [별표2] · 구 관할)
         </h3>
         {policeLoading ? (
           <div className="space-y-2">
@@ -114,7 +224,9 @@ export default function LocationInfo({
           </p>
         )}
         <p className="mt-3 text-xs text-slate-400">
-          IP 기반 추정 위치 기준이며, 실제 관할과 다를 수 있습니다.
+          {precise
+            ? "표시 좌표는 카카오 주소·GPS 기준 단일 핀입니다."
+            : "IP 추정 위치입니다. GPS 등록 시 동일 IP에 대해 오차 없이 표시됩니다."}
         </p>
       </div>
     </section>

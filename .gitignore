@@ -32,9 +32,16 @@ yarn-error.log*
 .env
 .env*.local
 
+# IP2Location BIN (대용량, 로컬·배포 시 geo-data에 배치)
+/geo-data/*.BIN
+/geo-data/*.bin
+/geo-data/.tmp-download/
+/geo-data/**/*.zip
+
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.env*

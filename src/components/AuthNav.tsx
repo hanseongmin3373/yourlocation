@@ -9,6 +9,7 @@ export default function AuthNav() {
   const [user, setUser] = useState<{
     email: string;
     name: string | null;
+    isAdmin?: boolean;
   } | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -16,7 +17,13 @@ export default function AuthNav() {
     fetch("/api/auth/session")
       .then((r) => r.json())
       .then((json) => {
-        if (json.success && json.user) setUser(json.user);
+        if (json.success && json.user) {
+          setUser({
+            email: json.user.email,
+            name: json.user.name,
+            isAdmin: json.user.role === "ADMIN",
+          });
+        }
       })
       .finally(() => setLoaded(true));
   }, []);
@@ -35,6 +42,14 @@ export default function AuthNav() {
   if (user) {
     return (
       <div className="flex items-center gap-2 text-sm">
+        {user.isAdmin && (
+          <Link
+            href="/admin"
+            className="rounded-lg px-3 py-1.5 font-medium text-violet-700 hover:bg-violet-50"
+          >
+            관리자
+          </Link>
+        )}
         <Link
           href="/my"
           className="rounded-lg px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-100"

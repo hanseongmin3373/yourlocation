@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import {
+  applyAdminBootstrap,
   createSession,
+  getAdminEmails,
   hashPassword,
   isValidEmail,
   isValidPassword,
@@ -13,11 +15,23 @@ export async function POST(request: Request) {
       email?: string;
       password?: string;
       name?: string;
+      agreedToTerms?: boolean;
+      agreedToPrivacy?: boolean;
     };
 
     const email = body.email?.trim().toLowerCase();
     const password = body.password ?? "";
     const name = body.name?.trim() || null;
+
+    if (!body.agreedToTerms || !body.agreedToPrivacy) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "이용약관 및 개인정보 처리방침에 동의해주세요.",
+        },
+        { status: 400 },
+      );
+    }
 
     if (!email || !isValidEmail(email)) {
       return NextResponse.json(
@@ -41,18 +55,43 @@ export async function POST(request: Request) {
       );
     }
 
+    const agreedAt = new Date();
+    const isAdminEmail = getAdminEmails().includes(email);
     const user = await prisma.user.create({
       data: {
         email,
         password: await hashPassword(password),
         name,
+        termsAgreedAt: agreedAt,
+        privacyAgreedAt: agreedAt,
+        isApproved: isAdminEmail,
+        role: isAdminEmail ? "ADMIN" : "USER",
       },
-      select: { id: true, email: true, name: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isApproved: true,
+      },
     });
 
-    await createSession(user);
+    await applyAdminBootstrap(user.id, user.email);
 
-    return NextResponse.json({ success: true, user });
+    const fresh = await prisma.user.findUniqueOrThrow({
+      where: { id: user.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isApproved: true,
+      },
+    });
+
+    await createSession(fresh);
+
+    return NextResponse.json({ success: true, user: fresh });
   } catch (error) {
     console.error("signup error", error);
     return NextResponse.json(

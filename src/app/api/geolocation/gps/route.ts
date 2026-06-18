@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { assertQueryAllowed, recordQuery } from "@/lib/query-access";
-import { getClientIp } from "@/lib/geo";
+import { getClientIp } from "@/lib/client-ip";
 import { resolveAddressFromCoords } from "@/lib/kakao-geocode";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as { lat?: number; lng?: number };
+    const body = (await request.json()) as {
+      lat?: number;
+      lng?: number;
+      accuracyM?: number;
+      isp?: string;
+    };
     const lat = body.lat;
     const lng = body.lng;
 
@@ -19,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     const user = await getSessionUser();
     const clientIp = getClientIp(request.headers);
-    const access = await assertQueryAllowed(user?.id ?? null, clientIp);
+    const access = await assertQueryAllowed(user, clientIp);
 
     if (!access.allowed) {
       return NextResponse.json(
@@ -32,8 +37,10 @@ export async function POST(request: NextRequest) {
     const address =
       detail?.full || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 
+    const accuracyM = Math.max(3, Math.round((body.accuracyM ?? 30) * 10) / 10);
+
     const recorded = await recordQuery({
-      userId: user?.id ?? null,
+      user,
       ip: clientIp,
       queryType: "gps_lookup",
       queryValue: `${lat.toFixed(6)},${lng.toFixed(6)}`,

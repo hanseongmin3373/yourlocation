@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  applyAdminBootstrap,
   createSession,
   isValidEmail,
   verifyPassword,
@@ -24,22 +25,40 @@ export async function POST(request: Request) {
     }
 
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user || !(await verifyPassword(password, user.password))) {
+    if (!user?.password || !(await verifyPassword(password, user.password))) {
+      if (user && !user.password) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "이 계정은 Google 로그인으로 가입되었습니다. Google로 로그인해주세요.",
+          },
+          { status: 401 },
+        );
+      }
       return NextResponse.json(
         { success: false, error: "이메일 또는 비밀번호가 올바르지 않습니다." },
         { status: 401 },
       );
     }
 
-    await createSession({
-      id: user.id,
-      email: user.email,
-      name: user.name,
+    await applyAdminBootstrap(user.id, user.email);
+
+    const fresh = await prisma.user.findUniqueOrThrow({
+      where: { id: user.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isApproved: true,
+      },
     });
+
+    await createSession(fresh);
 
     return NextResponse.json({
       success: true,
-      user: { id: user.id, email: user.email, name: user.name },
+      user: fresh,
     });
   } catch (error) {
     console.error("login error", error);

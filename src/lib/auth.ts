@@ -2,6 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
+import type { UserRole } from "@prisma/client";
 
 const SESSION_COOKIE = "yl_session";
 const SESSION_DAYS = 30;
@@ -10,6 +11,20 @@ export interface SessionUser {
   id: string;
   email: string;
   name: string | null;
+  role: UserRole;
+  isApproved: boolean;
+}
+
+export function getAdminEmails() {
+  const raw = process.env.ADMIN_EMAILS ?? "";
+  return raw
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+export function isUnlimitedUser(user: Pick<SessionUser, "role" | "isApproved">) {
+  return user.role === "ADMIN" || user.isApproved;
 }
 
 function getAuthSecret() {
@@ -33,6 +48,8 @@ export async function createSession(user: SessionUser) {
     sub: user.id,
     email: user.email,
     name: user.name,
+    role: user.role,
+    isApproved: user.isApproved,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -54,7 +71,7 @@ export async function destroySession() {
   cookieStore.delete(SESSION_COOKIE);
 }
 
-export async function getSession(): Promise<SessionUser | null> {
+export async function getSessionUser(): Promise<SessionUser | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -62,29 +79,41 @@ export async function getSession(): Promise<SessionUser | null> {
   try {
     const { payload } = await jwtVerify(token, getAuthSecret());
     const id = payload.sub;
-    const email = payload.email;
-    if (typeof id !== "string" || typeof email !== "string") return null;
+    if (typeof id !== "string") return null;
 
-    return {
-      id,
-      email,
-      name: typeof payload.name === "string" ? payload.name : null,
-    };
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isApproved: true,
+      },
+    });
+
+    return user;
   } catch {
     return null;
   }
 }
 
-export async function getSessionUser(): Promise<SessionUser | null> {
-  const session = await getSession();
-  if (!session) return null;
-
-  const user = await prisma.user.findUnique({
-    where: { id: session.id },
-    select: { id: true, email: true, name: true },
-  });
-
+export async function requireAdmin() {
+  const user = await getSessionUser();
+  if (!user || user.role !== "ADMIN") {
+    return null;
+  }
   return user;
+}
+
+export async function applyAdminBootstrap(userId: string, email: string) {
+  const normalized = email.trim().toLowerCase();
+  if (!getAdminEmails().includes(normalized)) return;
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { role: "ADMIN", isApproved: true },
+  });
 }
 
 export function isValidEmail(email: string) {

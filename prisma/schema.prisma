@@ -7,13 +7,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
 model User {
-  id        String     @id @default(cuid())
-  email     String     @unique
-  password  String
-  name      String?
-  createdAt DateTime   @default(now())
-  queries   QueryLog[]
+  id              String     @id @default(cuid())
+  email           String     @unique
+  password        String?
+  googleId        String?    @unique
+  name            String?
+  role            UserRole   @default(USER)
+  isApproved      Boolean    @default(false)
+  termsAgreedAt   DateTime
+  privacyAgreedAt DateTime
+  createdAt       DateTime   @default(now())
+  queries         QueryLog[]
 }
 
 model QueryLog {
@@ -35,4 +45,34 @@ model AnonymousUsage {
   count Int    @default(0)
 
   @@unique([ip, date])
+}
+
+/// 사용자 GPS+IP 자발 등록 데이터 (mylocation.co.kr 방식)
+model IpLocationEntry {
+  id             String   @id @default(cuid())
+  ip             String   @unique
+  ipPrefix24     String
+  lat            Float
+  lon            Float
+  accuracyM      Float
+  /// 전체 주소 (역지오코딩)
+  address        String
+  /// 공개·저장용 적용 주소 (동/읍/면 단위)
+  appliedAddress String   @default("")
+  dong           String?
+  sido           String?
+  sigungu        String?
+  roadAddress    String?
+  isp            String?
+  lookupCount    Int      @default(0)
+  registerCount  Int      @default(1)
+  source         String   @default("gps-register")
+  /// 사용자가 도로명 주소를 직접 확인·선택한 경우 (mylocation 방식)
+  userVerified   Boolean  @default(false)
+  verifiedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([ipPrefix24])
+  @@index([updatedAt(sort: Desc)])
 }

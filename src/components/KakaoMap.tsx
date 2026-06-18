@@ -9,13 +9,11 @@ interface KakaoMapProps {
   policeStation?: PoliceStationInfo | null;
   heightClass?: string;
   fullBleed?: boolean;
-  /** IP 추정 오차 반경(미터). GPS는 50~100m 권장 */
+  mapLevel?: number;
+  /** 미터 단위 오차 원 (최대 5km) */
   accuracyRadiusM?: number;
+  exactPin?: boolean;
 }
-
-const DEFAULT_IP_CIRCLE_RADIUS = 2500;
-const CURSOR_CIRCLE_RADIUS = 400;
-
 function loadKakaoMapScript(appKey: string): Promise<void> {
   return new Promise((resolve, reject) => {
     if (window.kakao?.maps) {
@@ -50,17 +48,16 @@ export default function KakaoMap({
   policeStation,
   heightClass = "h-[50vh] min-h-[280px]",
   fullBleed = false,
-  accuracyRadiusM = DEFAULT_IP_CIRCLE_RADIUS,
-}: KakaoMapProps) {
-  const frameClass = fullBleed
+  mapLevel = 3,
+  accuracyRadiusM,
+  exactPin = true,
+}: KakaoMapProps) {  const frameClass = fullBleed
     ? `${heightClass} w-full`
     : `${heightClass} w-full overflow-hidden rounded-2xl border border-slate-200`;
 
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<unknown>(null);
   const overlaysRef = useRef<MapOverlay[]>([]);
-  const cursorCircleRef = useRef<MapOverlay | null>(null);
-  const mousemoveHandlerRef = useRef<((e: unknown) => void) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -101,7 +98,7 @@ export default function KakaoMap({
     if (!mapInstanceRef.current) {
       mapInstanceRef.current = new kakao.maps.Map(mapRef.current, {
         center,
-        level: 5,
+        level: mapLevel,
       });
     }
 
@@ -109,29 +106,6 @@ export default function KakaoMap({
 
     overlaysRef.current.forEach((overlay) => overlay.setMap(null));
     overlaysRef.current = [];
-    cursorCircleRef.current = null;
-
-    if (mousemoveHandlerRef.current) {
-      kakao.maps.event.removeListener(
-        map,
-        "mousemove",
-        mousemoveHandlerRef.current,
-      );
-      mousemoveHandlerRef.current = null;
-    }
-
-    const ipCircle = new kakao.maps.Circle({
-      center,
-      radius: accuracyRadiusM,
-      strokeWeight: 2,
-      strokeColor: "#2563eb",
-      strokeOpacity: 0.85,
-      strokeStyle: "solid",
-      fillColor: "#3b82f6",
-      fillOpacity: 0.18,
-    });
-    ipCircle.setMap(map);
-    overlaysRef.current.push(ipCircle);
 
     const ipMarker = new kakao.maps.Marker({
       position: center,
@@ -140,10 +114,26 @@ export default function KakaoMap({
     ipMarker.setMap(map);
     overlaysRef.current.push(ipMarker);
 
-    if (label) {
+    if (!exactPin && accuracyRadiusM && accuracyRadiusM > 0) {
+      const circle = new kakao.maps.Circle({
+        center,
+        radius: accuracyRadiusM,
+        strokeWeight: 2,
+        strokeColor: "#d97706",
+        strokeOpacity: 0.85,
+        strokeStyle: "shortdash",
+        fillColor: "#fef3c7",
+        fillOpacity: 0.35,
+        zIndex: 1,
+      });
+      circle.setMap(map);
+      overlaysRef.current.push(circle);
+    }
+
+    if (label && exactPin) {
       const labelOverlay = new kakao.maps.CustomOverlay({
         position: center,
-        content: `<div style="padding:6px 10px;background:#fff;border-radius:8px;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.12);white-space:nowrap;border:1px solid #bfdbfe;">${label}</div>`,
+        content: `<div style="padding:6px 10px;background:#fff;border-radius:8px;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.12);white-space:nowrap;border:1px solid #86efac;">${label}</div>`,
         yAnchor: 2.4,
         zIndex: 3,
       });
@@ -154,7 +144,12 @@ export default function KakaoMap({
     const bounds = new kakao.maps.LatLngBounds();
     bounds.extend(center);
 
-    if (policeStation) {
+    const policeHasCoords =
+      policeStation != null &&
+      Number.isFinite(policeStation.lat) &&
+      Number.isFinite(policeStation.lng);
+
+    if (policeHasCoords) {
       const policeCenter = new kakao.maps.LatLng(
         policeStation.lat,
         policeStation.lng,
@@ -188,52 +183,40 @@ export default function KakaoMap({
       overlaysRef.current.push(line);
     }
 
-    const cursorCircle = new kakao.maps.Circle({
-      center,
-      radius: CURSOR_CIRCLE_RADIUS,
-      strokeWeight: 2,
-      strokeColor: "#059669",
-      strokeOpacity: 0.9,
-      strokeStyle: "solid",
-      fillColor: "#10b981",
-      fillOpacity: 0.12,
-      zIndex: 1,
-    });
-    cursorCircle.setMap(map);
-    cursorCircleRef.current = cursorCircle;
-    overlaysRef.current.push(cursorCircle);
+    if (!exactPin && accuracyRadiusM && accuracyRadiusM > 0) {
+      const latOffset = accuracyRadiusM / 111_320;
+      const lngOffset =
+        accuracyRadiusM /
+        (111_320 * Math.cos((position.lat * Math.PI) / 180));
+      bounds.extend(
+        new kakao.maps.LatLng(position.lat + latOffset, position.lng),
+      );
+      bounds.extend(
+        new kakao.maps.LatLng(position.lat - latOffset, position.lng),
+      );
+      bounds.extend(
+        new kakao.maps.LatLng(position.lat, position.lng + lngOffset),
+      );
+      bounds.extend(
+        new kakao.maps.LatLng(position.lat, position.lng - lngOffset),
+      );
+    }
 
-    const onMouseMove = (mouseEvent: unknown) => {
-      const latLng = (mouseEvent as { latLng: unknown }).latLng as {
-        getLat: () => number;
-        getLng: () => number;
-      };
-      cursorCircle.setPosition(latLng);
-    };
+    (map as { setCenter: (c: unknown) => void; setLevel: (l: number) => void }).setCenter(center);
+    (map as { setLevel: (l: number) => void }).setLevel(mapLevel);
 
-    mousemoveHandlerRef.current = onMouseMove;
-    kakao.maps.event.addListener(map, "mousemove", onMouseMove);
-
-    (map as { setBounds: (b: unknown, padding?: number) => void }).setBounds(
-      bounds,
-      48,
-    );
+    if (policeHasCoords || (!exactPin && accuracyRadiusM)) {
+      (map as { setBounds: (b: unknown, padding?: number) => void }).setBounds(
+        bounds,
+        48,
+      );
+    }
 
     return () => {
       overlaysRef.current.forEach((overlay) => overlay.setMap(null));
       overlaysRef.current = [];
-
-      if (mousemoveHandlerRef.current && mapInstanceRef.current) {
-        kakao.maps.event.removeListener(
-          mapInstanceRef.current,
-          "mousemove",
-          mousemoveHandlerRef.current,
-        );
-        mousemoveHandlerRef.current = null;
-      }
     };
-  }, [ready, position, label, policeStation, accuracyRadiusM]);
-
+  }, [ready, position, label, policeStation, mapLevel, accuracyRadiusM, exactPin]);
   if (error) {
     const isMissingKey = error.includes("설정되지 않았습니다");
     return (
@@ -254,8 +237,7 @@ export default function KakaoMap({
             <>
               JavaScript 키가 맞는지, 카카오 Developers → Web 도메인에{" "}
               yourlocation.co.kr / www.yourlocation.co.kr /
-              yourlocation.vercel.app 이 등록됐는지, 카카오맵 사용 설정이
-              켜져 있는지 확인해주세요.
+              yourlocation.vercel.app 이 등록됐는지 확인해주세요.
             </>
           )}
         </span>
@@ -276,10 +258,6 @@ export default function KakaoMap({
   return (
     <div className="relative">
       <div ref={mapRef} className={frameClass} aria-label="카카오맵" />
-      <p className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-3 py-1 text-[11px] text-slate-600 shadow-sm">
-        파란 원: IP/GPS 추정 범위(약 {Math.round(accuracyRadiusM / 100) / 10}
-        km) · 초록 원: 마우스 위치
-      </p>
     </div>
   );
 }

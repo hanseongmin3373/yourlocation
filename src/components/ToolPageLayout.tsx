@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Header from "@/components/Header";
+import SiteFooter from "@/components/SiteFooter";
 import UtilityLinks from "@/components/UtilityLinks";
 
 interface ToolPageLayoutProps {
@@ -38,9 +39,7 @@ export default function ToolPageLayout({
         {children}
       </main>
 
-      <footer className="border-t border-slate-200 py-6 text-center text-xs text-slate-400">
-        © {new Date().getFullYear()} yourlocation.co.kr · IP 위치 조회 서비스
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
