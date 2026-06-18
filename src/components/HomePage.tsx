@@ -128,6 +128,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
         throw new Error(json.error || "조회에 실패했습니다.");
       }
       applyLocation(json.data, json.remaining);
+      return json.data as GeoLocationData;
     },
     [applyLocation],
   );
@@ -310,20 +311,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
     setRegisterModalOpen(false);
     setRegisterError(null);
     setGpsPreview(null);
-
-    if (clientIp && getLocationConsent() !== "registered" && !locationData) {
-      setLoading(true);
-      setError(null);
-      setInfoTitle("IP 위치 정보 (미등록 · 추정)");
-      void fetchRemoteIp(clientIp)
-        .catch((err) => {
-          setError(
-            err instanceof Error ? err.message : "조회에 실패했습니다.",
-          );
-        })
-        .finally(() => setLoading(false));
-    }
-  }, [clientIp, fetchRemoteIp, locationData]);
+  }, []);
 
   const handleEraseRegistration = useCallback(async () => {
     if (
@@ -431,14 +419,58 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
           return;
         }
 
+        if (!registered && dismissed) {
+          setInfoTitle("GPS 위치 등록 필요");
+          setLoading(false);
+          return;
+        }
+
         setLoading(true);
         setError(null);
-        setInfoTitle(
-          registered ? "IP 위치 정보" : "IP 위치 정보 (미등록 · 추정)",
-        );
+        setInfoTitle("내 IP 위치");
+
+        const hasGeo =
+          typeof navigator !== "undefined" && navigator.geolocation;
+
+        if (hasGeo) {
+          try {
+            const result = await fetchOwnIpWithGps(ip, { fast: true });
+            if (!cancelled) {
+              setInfoTitle("내 IP 위치 (GPS 등록)");
+              applyLocation(result.data, result.remaining);
+              setCrowdStatsRefresh((n) => n + 1);
+              sessionStorage.setItem(DB_REFRESH_KEY, "1");
+            }
+            return;
+          } catch {
+            // 등록 DB·IP 추정으로 fallback
+          }
+        }
 
         try {
-          await fetchRemoteIp(ip);
+          const data = await fetchRemoteIp(ip);
+          if (
+            !cancelled &&
+            hasGeo &&
+            data &&
+            !isPreciseLocation(data)
+          ) {
+            void fetchOwnIpWithGps(ip, { fast: true })
+              .then((result) => {
+                if (cancelled) return;
+                setInfoTitle("내 IP 위치 (GPS 등록)");
+                applyLocation(result.data, result.remaining);
+                setCrowdStatsRefresh((n) => n + 1);
+                sessionStorage.setItem(DB_REFRESH_KEY, "1");
+              })
+              .catch(() => {
+                if (cancelled) return;
+                setRegisterModalOpen(true);
+                setRegisterError(
+                  "GPS 위치를 확인할 수 없습니다. 위치 재등록을 진행해 주세요.",
+                );
+              });
+          }
         } catch (err) {
           if (!cancelled) {
             setError(
@@ -449,24 +481,6 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
           }
         } finally {
           if (!cancelled) setLoading(false);
-        }
-
-        if (
-          !cancelled &&
-          registered &&
-          typeof navigator !== "undefined" &&
-          navigator.geolocation &&
-          sessionStorage.getItem(DB_REFRESH_KEY) !== "1"
-        ) {
-          void fetchOwnIpWithGps(ip, { fast: true })
-            .then((result) => {
-              if (cancelled) return;
-              setInfoTitle("내 IP 위치 (GPS 등록 DB)");
-              applyLocation(result.data, result.remaining);
-              setCrowdStatsRefresh((n) => n + 1);
-              sessionStorage.setItem(DB_REFRESH_KEY, "1");
-            })
-            .catch(() => {});
         }
       } catch {
         if (!cancelled) {
@@ -576,8 +590,21 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
             ) : (
               <>
                 <strong className="font-semibold">IP 추정 모드</strong> —
-                다중 GeoIP 융합 결과이며 오차가 5km를 초과할 수 있습니다. 정밀
-                위치는 GPS 등록이 필요합니다.
+                다중 GeoIP 융합 결과이며 오차가 5km를 초과할 수 있습니다.{" "}
+                {isLocationRegistered ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={openRegisterModal}
+                      className="font-semibold text-emerald-700 underline hover:text-emerald-900"
+                    >
+                      위치 재등록
+                    </button>
+                    으로 GPS 정밀 위치를 확인하세요.
+                  </>
+                ) : (
+                  <>정밀 위치는 GPS 등록이 필요합니다.</>
+                )}
               </>
             )}
           </p>

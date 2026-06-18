@@ -15,7 +15,7 @@ export default function IpBanner({ ip }: IpBannerProps) {
         입니다
       </p>
       <p className="text-xs text-slate-500">
-        ip-api · 등록 DB · 카카오 주소 검색 (mylocation.co.kr 동일 방식)
+        ip-api · 등록 DB · 카카오 주소 검색
       </p>
     </div>
   );
