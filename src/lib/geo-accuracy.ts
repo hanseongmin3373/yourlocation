@@ -22,12 +22,24 @@ export const ADDRESS_COORD_ALIGN_M = 250;
 /** GPS 단일 핀 허용 최대 오차 */
 export const EXACT_GPS_ACCURACY_M = 20;
 
-/** 크라우드 /24 클러스터 사용 조건 */
+/** 등록 모달 — GPS 경고·확인 차단 기준 */
+export const REGISTRATION_GPS_WARN_M = 80;
+export const REGISTRATION_GPS_BLOCK_CONFIRM_M = 200;
+
+/** 크라우드 /24 클러스터 사용 조건 (GPS 자발 등록) */
 export const CROWD_CLUSTER_MAX_SPREAD_M = 500;
 export const CROWD_CLUSTER_MAX_ACCURACY_M = 30;
 
+/** mylocation-import 대량 데이터 — GPS 오차·연령 제한 완화 */
+export const MYLOCATION_IMPORT_MAX_ACCURACY_M = 500;
+export const MYLOCATION_IMPORT_MAX_SPREAD_M = 2000;
+
 export const ESTIMATED_IP_ACCURACY_NOTE =
-  "IP 추정 (시·군·구) — 도로명·오차 없는 위치는 GPS 등록·주소 확인 필요";
+  "IP 추정 (시·군·구) — 도로명·오차 없는 위치는 GPS 등록·주소 확인 또는 crowd DB 필요";
+
+/** ipinfo 1차 엔진 — Plus/Lookup API 기준 */
+export const IPINFO_PRIMARY_NOTE =
+  "ipinfo.io 1차 조회 — 등록 DB·GPS 확인 주소 우선";
 
 export const VERIFIED_ZERO_ERROR_NOTE =
   "사용자 확인 주소 — 오차 없음";
@@ -136,9 +148,24 @@ export function enforceZeroErrorPolicy(data: GeoLocationData): GeoLocationData {
     };
   }
 
+  if (data.addressSource === "kakao-search") {
+    return {
+      ...data,
+      exactPin: true,
+      accuracyM: undefined,
+      locationSource: "pinpoint",
+      confidenceLevel: "high",
+    };
+  }
+
   if (
-    data.addressSource === "kakao-search" ||
-    data.addressSource === "coord2address"
+    data.addressSource === "coord2address" &&
+    data.locationSource !== "ip" &&
+    data.geoProvider !== "ip-api" &&
+    data.geoProvider !== "ip2location" &&
+    !data.geoSources?.some((s) =>
+      ["ip-api", "ip2location", "ipinfo", "db-ip"].includes(s),
+    )
   ) {
     return {
       ...data,

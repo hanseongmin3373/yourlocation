@@ -7,6 +7,8 @@ type LocationRegisterHeroProps = {
   clientIp?: string;
   onRegister: () => void;
   crowdStatsRefresh?: number;
+  /** 좌우 분할 레이아웃용 컴팩트 배너 */
+  compact?: boolean;
 };
 
 function PinIcon({ className }: { className?: string }) {
@@ -34,6 +36,7 @@ export default function LocationRegisterHero({
   clientIp,
   onRegister,
   crowdStatsRefresh = 0,
+  compact = false,
 }: LocationRegisterHeroProps) {
   const [crowdCount, setCrowdCount] = useState<number | null>(null);
 
@@ -45,6 +48,37 @@ export default function LocationRegisterHero({
       })
       .catch(() => {});
   }, [crowdStatsRefresh]);
+
+  if (compact) {
+    return (
+      <div
+        className={
+          isRegistered
+            ? "shrink-0 border-b border-emerald-200 bg-emerald-50 px-3 py-2"
+            : "shrink-0 border-b border-amber-200 bg-amber-50 px-3 py-2"
+        }
+      >
+        <div className="flex items-center justify-between gap-2">
+          <p className="min-w-0 text-xs leading-snug text-emerald-950 sm:text-sm">
+            {isRegistered ? (
+              <>GPS 등록 완료 · 정밀 모드</>
+            ) : (
+              <>
+                <strong>위치 등록 필요</strong> — GPS·주소 확인 후 검색 가능
+              </>
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={onRegister}
+            className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
+          >
+            {isRegistered ? "재등록" : "등록"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <section

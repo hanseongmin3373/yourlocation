@@ -31,6 +31,8 @@ WHERE IP IS NOT NULL;
 
 4. 결과를 `geo-data/mylocation/export.csv` 로 저장
 
+개발·검증용 소량 샘플: `geo-data/mylocation/sample-export.csv` (5건)
+
 ## 2. yourlocation에 import
 
 ```bash
@@ -46,8 +48,11 @@ node scripts/import-mylocation.mjs --mssql
 
 ## 3. import 후
 
-- `IpLocationEntry`에 `source: mylocation-import` 로 저장
-- IP 조회 시 `lookupCrowdIpExact()` 가 GeoIP보다 우선
+- `IpLocationEntry`에 `source: mylocation-import` 로 저장 (`userVerified: false` — 동·구 추정)
+- IP 조회 우선순위: **exact IP → /24 → 인접 /24 → ISP /16** (GeoIP보다 우선)
+- **GPS+주소 확인(`userVerified`) 등록은 import로 덮어쓰지 않음** — 본인 재등록 데이터 보호
+
+전체 ~252만 건 import 전까지는 mylocation과 동일 수준의 커버리지가 나오지 않습니다.
 
 ## 4. 필요한 정보 (운영자에게 요청)
 

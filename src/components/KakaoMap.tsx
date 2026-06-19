@@ -8,6 +8,8 @@ interface KakaoMapProps {
   label?: string;
   policeStation?: PoliceStationInfo | null;
   heightClass?: string;
+  /** 부모 flex/grid 셀 높이에 맞춤 */
+  fillContainer?: boolean;
   fullBleed?: boolean;
   mapLevel?: number;
   /** 미터 단위 오차 원 (최대 5km) */
@@ -47,13 +49,16 @@ export default function KakaoMap({
   label,
   policeStation,
   heightClass = "h-[50vh] min-h-[280px]",
+  fillContainer = false,
   fullBleed = false,
   mapLevel = 3,
   accuracyRadiusM,
   exactPin = true,
-}: KakaoMapProps) {  const frameClass = fullBleed
-    ? `${heightClass} w-full`
-    : `${heightClass} w-full overflow-hidden rounded-2xl border border-slate-200`;
+}: KakaoMapProps) {
+  const resolvedHeight = fillContainer ? "h-full min-h-0" : heightClass;
+  const frameClass = fullBleed || fillContainer
+    ? `${resolvedHeight} w-full`
+    : `${resolvedHeight} w-full overflow-hidden rounded-2xl border border-slate-200`;
 
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<unknown>(null);
@@ -103,6 +108,11 @@ export default function KakaoMap({
     }
 
     const map = mapInstanceRef.current;
+    if (fillContainer) {
+      window.requestAnimationFrame(() => {
+        (map as { relayout?: () => void }).relayout?.();
+      });
+    }
 
     overlaysRef.current.forEach((overlay) => overlay.setMap(null));
     overlaysRef.current = [];
@@ -216,12 +226,12 @@ export default function KakaoMap({
       overlaysRef.current.forEach((overlay) => overlay.setMap(null));
       overlaysRef.current = [];
     };
-  }, [ready, position, label, policeStation, mapLevel, accuracyRadiusM, exactPin]);
+  }, [ready, position, label, policeStation, mapLevel, accuracyRadiusM, exactPin, fillContainer]);
   if (error) {
     const isMissingKey = error.includes("설정되지 않았습니다");
     return (
       <div
-        className={`flex ${heightClass} items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center text-sm text-slate-500`}
+        className={`flex ${resolvedHeight} items-center justify-center ${fillContainer ? "" : "rounded-2xl border border-dashed border-slate-200"} bg-slate-50 px-6 text-center text-sm text-slate-500`}
       >
         {error}
         <br />
@@ -248,7 +258,7 @@ export default function KakaoMap({
   if (!position) {
     return (
       <div
-        className={`flex ${heightClass} items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-400`}
+        className={`flex ${resolvedHeight} items-center justify-center ${fillContainer ? "" : "rounded-2xl border border-dashed border-slate-200"} bg-slate-50 text-sm text-slate-400`}
       >
         위치 정보가 표시되면 지도가 나타납니다
       </div>
@@ -256,7 +266,7 @@ export default function KakaoMap({
   }
 
   return (
-    <div className="relative">
+    <div className={fillContainer ? "relative h-full min-h-0" : "relative"}>
       <div ref={mapRef} className={frameClass} aria-label="카카오맵" />
     </div>
   );

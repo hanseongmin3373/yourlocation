@@ -4,6 +4,7 @@ import {
   capPrecisionForAccuracy,
   effectiveAccuracyM,
   ESTIMATED_IP_ACCURACY_NOTE,
+  EXACT_PROVIDER_AGREEMENT_M,
   enforceZeroErrorPolicy,
   IP2LOCATION_ALIGNED_ACCURACY_M,
   IP2LOCATION_CITY_ACCURACY_M,
@@ -19,6 +20,7 @@ import {
 import {
   fuseCoordinates,
   haversineMeters,
+  IP2LOC_REJECT_DISTANCE_M,
   toGeoCandidate,
   type GeoPointCandidate,
 } from "./geo-fusion";
@@ -31,8 +33,20 @@ import {
   type DbIpMeta,
 } from "./geo-supplementary";
 import { lookupFromIp2Location } from "./geo-ip2location";
-import { mapCityToKorean, mapRegionToKorean, parseDbIpCityHints, isDongLevelName } from "./ipinfo-kr";
+import {
+  hasIpinfoToken,
+  lookupFromIpinfo,
+  type IpinfoPlusIntel,
+} from "./geo-ipinfo";
+import { buildPlusAccuracyNotes, plusAgreementRadiusM } from "./ipinfo-plus";
 import { lookupKisaWhois } from "./kisa-whois";
+import {
+  isDongLevelName,
+  mapCityToKorean,
+  mapRegionToKorean,
+  parseDbIpCityHints,
+  sidoFromRegionCode,
+} from "./ipinfo-kr";
 import { createMemoryCache } from "./memory-cache";
 import { resolveAddressFromCoords, geocodeSigunguCenter } from "./kakao-geocode";
 import type { GeoLocationData } from "./types";
@@ -40,7 +54,7 @@ import type { GeoLocationData } from "./types";
 const IP_LOOKUP_CACHE_TTL_MS = 5 * 60 * 1000;
 const ipLookupCache = createMemoryCache<GeoLocationData>(IP_LOOKUP_CACHE_TTL_MS, 300);
 const OPTIONAL_PROVIDER_MS = 1000;
-const IPINFO_LOOKUP_MS = 1200;
+const IPINFO_LOOKUP_MS = 2000;
 const KISA_WHOIS_MS = 1500;
 const DB_IP_LOOKUP_MS = 1500;
 const CROWD_LOOKUP_MS = 1400;
@@ -68,10 +82,6 @@ function lookupSupplementalProviders(ip: string) {
     withTimeout(lookupFromIpWho(ip), OPTIONAL_PROVIDER_MS),
     withTimeout(lookupFromGeojs(ip), OPTIONAL_PROVIDER_MS),
   ]);
-}
-
-function hasIpinfoToken(): boolean {
-  return Boolean(process.env.IPINFO_TOKEN?.trim());
 }
 
 function cityHintsAgree(
@@ -116,7 +126,7 @@ export function invalidateIpLookupCache(ip?: string): void {
 const FETCH_OPTS: RequestInit = {
   cache: "no-store",
   headers: {
-    "User-Agent": "yourlocation.co.kr/1.0 (+https://www.yourlocation.co.kr)",
+    "User-Agent": "yourlocation.co.kr/2.0 (+https://www.yourlocation.co.kr)",
     Accept: "application/json",
   },
 };
@@ -152,186 +162,22 @@ interface IpWhoResponse {
   connection?: { isp?: string; org?: string; asn?: number };
 }
 
-interface IpInfoLookupResponse {
-  ip?: string;
-  geo?: {
-    city?: string;
-    region?: string;
-    region_code?: string;
-    country?: string;
-    country_code?: string;
-    latitude?: number;
-    longitude?: number;
-    timezone?: string;
-    postal_code?: string;
-    radius?: number;
-  };
-  as?: {
-    asn?: string;
-    name?: string;
-    domain?: string;
-    type?: string;
-  };
-  is_mobile?: boolean;
-  is_hosting?: boolean;
-  is_anonymous?: boolean;
-  anonymous?: { is_vpn?: boolean; name?: string };
-}
-
-interface IpInfoLegacyResponse {
-  ip?: string;
-  city?: string;
-  region?: string;
-  country?: string;
-  loc?: string;
-  postal?: string;
-  timezone?: string;
-  org?: string;
-  error?: { title?: string; message?: string };
-}
-
-type IpinfoMeta = {
-  provider: string;
-  isMobile?: boolean;
-  isVpn?: boolean;
-  isHosting?: boolean;
-  radiusKm?: number;
-  regionCode?: string;
-};
-
-function ipinfoAuthHeaders(token: string): HeadersInit {
-  return { Authorization: `Bearer ${token}` };
-}
-
-function parseLoc(loc?: string): { lat: number; lon: number } | null {
-  if (!loc) return null;
-  const [a, b] = loc.split(",").map((s) => Number(s.trim()));
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
-  return { lat: a, lon: b };
-}
-
 function buildPinpointAccuracyNote(
-  meta: IpinfoMeta | null,
+  meta: IpinfoPlusIntel | null,
   fused: { providers: string[] },
   addressSource: string,
 ): string {
   const parts = [buildPinpointNote(fused.providers, addressSource)];
 
-  if (meta?.isVpn) {
-    parts.push("VPN/프록시 — 실제 위치와 다를 수 있음");
+  if (meta?.isAnonymous) {
+    parts.push(
+      meta.privacyServiceName
+        ? `${meta.privacyServiceName} — 실제 위치와 다를 수 있음`
+        : "VPN/프록시 — 실제 위치와 다를 수 있음",
+    );
   }
 
   return parts.join(" · ");
-}
-
-async function lookupFromIpinfoLookup(
-  ip: string,
-  token: string,
-): Promise<{
-  data: Partial<GeoLocationData>;
-  meta: IpinfoMeta;
-  point: GeoPointCandidate;
-} | null> {
-  try {
-    const res = await fetch(
-      `https://api.ipinfo.io/lookup/${encodeURIComponent(ip)}`,
-      { ...FETCH_OPTS, headers: ipinfoAuthHeaders(token) },
-    );
-    if (!res.ok) return null;
-
-    const json = (await res.json()) as IpInfoLookupResponse;
-    const geo = json.geo;
-    if (!geo?.latitude || !geo?.longitude) return null;
-
-    const meta: IpinfoMeta = {
-      provider: "ipinfo",
-      isMobile: json.is_mobile,
-      isVpn: json.is_anonymous || json.anonymous?.is_vpn,
-      isHosting: json.is_hosting,
-      radiusKm: geo.radius,
-      regionCode: geo.region_code,
-    };
-
-    const point = toGeoCandidate(
-      geo.latitude,
-      geo.longitude,
-      "ipinfo",
-      geo.radius,
-    )!;
-
-    return {
-      meta,
-      point,
-      data: {
-        country: geo.country || "",
-        countryCode: geo.country_code || "",
-        region: geo.region || "",
-        city: geo.city || "",
-        zip: geo.postal_code || "",
-        lat: geo.latitude,
-        lon: geo.longitude,
-        timezone: geo.timezone || "",
-        isp: json.as?.name || "",
-        org: json.as?.domain || "",
-        as: json.as?.asn ? `AS${json.as.asn}` : "",
-      },
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function lookupFromIpinfoLegacy(
-  ip: string,
-  token: string,
-): Promise<{
-  data: Partial<GeoLocationData>;
-  meta: IpinfoMeta;
-  point: GeoPointCandidate;
-} | null> {
-  try {
-    const res = await fetch(
-      `https://ipinfo.io/${encodeURIComponent(ip)}`,
-      { ...FETCH_OPTS, headers: ipinfoAuthHeaders(token) },
-    );
-    if (!res.ok) return null;
-
-    const json = (await res.json()) as IpInfoLegacyResponse;
-    if (json.error) return null;
-
-    const coords = parseLoc(json.loc);
-    if (!coords) return null;
-
-    const point = toGeoCandidate(coords.lat, coords.lon, "ipinfo")!;
-
-    return {
-      meta: { provider: "ipinfo" },
-      point,
-      data: {
-        country: json.country || "",
-        countryCode: json.country || "",
-        region: json.region || "",
-        city: json.city || "",
-        zip: json.postal || "",
-        lat: coords.lat,
-        lon: coords.lon,
-        timezone: json.timezone || "",
-        isp: "",
-        org: json.org || "",
-        as: "",
-      },
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function lookupFromIpinfo(ip: string) {
-  const token = process.env.IPINFO_TOKEN?.trim();
-  if (!token) return null;
-  const plus = await lookupFromIpinfoLookup(ip, token);
-  if (plus) return plus;
-  return lookupFromIpinfoLegacy(ip, token);
 }
 
 async function lookupFromIpApi(ip: string) {
@@ -616,70 +462,120 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
   const queryIp = normalizeIp(ip);
   const startedAt = Date.now();
 
+  // 등록 DB는 캐시보다 항상 우선 (Vercel 다중 인스턴스·등록 전 GeoIP 캐시 잔존 방지)
+  const crowd = await withTimeout(lookupCrowdIp(queryIp), CROWD_LOOKUP_MS);
+  if (crowd) {
+    if (!crowd.isp) {
+      const ipApiHint = await withTimeout(lookupFromIpApi(queryIp), IP_API_MS);
+      if (ipApiHint?.data?.isp) {
+        crowd.isp = ipApiHint.data.isp;
+        crowd.org = ipApiHint.data.org || "";
+        crowd.as = ipApiHint.data.as || "";
+      }
+    }
+    return cacheAndReturn(queryIp, crowd, startedAt);
+  }
+
   const cached = ipLookupCache.get(queryIp);
   if (cached) {
     logLookupPerf(`${queryIp} (cache)`, startedAt);
     return enforceZeroErrorPolicy(cached);
   }
 
-  const [crowd, ip2loc, ipApi, dbIpHint, ipinfo, kisaWhois] = await Promise.all([
-    withTimeout(lookupCrowdIp(queryIp), CROWD_LOOKUP_MS),
-    lookupFromIp2Location(queryIp),
-    withTimeout(lookupFromIpApi(queryIp), IP_API_MS),
-    withTimeout(lookupFromDbIp(queryIp), DB_IP_LOOKUP_MS),
-    hasIpinfoToken()
+  const ipinfoPrimary = hasIpinfoToken();
+
+  const [ipinfo, dbIpHint, kisaWhois] = await Promise.all([
+    ipinfoPrimary
       ? withTimeout(lookupFromIpinfo(queryIp), IPINFO_LOOKUP_MS)
       : Promise.resolve(null),
+    withTimeout(lookupFromDbIp(queryIp), DB_IP_LOOKUP_MS),
     withTimeout(lookupKisaWhois(queryIp), KISA_WHOIS_MS),
   ]);
   const dbIp = dbIpHint;
 
-  if (crowd) {
-    if (!crowd.isp && ipApi?.data?.isp) {
-      crowd.isp = ipApi.data.isp;
-      crowd.org = ipApi.data.org || "";
-      crowd.as = ipApi.data.as || "";
-    }
-    return cacheAndReturn(queryIp, crowd, startedAt);
+  let ip2loc: Awaited<ReturnType<typeof lookupFromIp2Location>> = null;
+  let ipApi: Awaited<ReturnType<typeof lookupFromIpApi>> = null;
+
+  if (ipinfo?.point) {
+    ipApi = await withTimeout(lookupFromIpApi(queryIp), IP_API_MS);
+  } else {
+    [ip2loc, ipApi] = await Promise.all([
+      lookupFromIp2Location(queryIp),
+      withTimeout(lookupFromIpApi(queryIp), IP_API_MS),
+    ]);
   }
 
-  const resolvedIsp = ipApi?.data?.isp;
+  const resolvedIsp = ipinfo?.data?.isp || ipApi?.data?.isp;
 
   const countryCodeEarly =
-    ip2loc?.data?.countryCode || ipApi?.data?.countryCode;
+    ipinfo?.data?.countryCode ||
+    ip2loc?.data?.countryCode ||
+    ipApi?.data?.countryCode;
   const isKrEarly = countryCodeEarly === "KR";
 
   const points: GeoPointCandidate[] = [];
-  if (ip2loc?.point) points.push(ip2loc.point);
-  if (ipApi?.point) points.push(ipApi.point);
 
-  const hasCoreGeo = Boolean(ip2loc?.point || ipApi?.point);
+  if (ipinfo?.point) {
+    points.push(ipinfo.point);
+    const agreeM = plusAgreementRadiusM(ipinfo.meta);
+    const geojsHint = await withTimeout(
+      lookupFromGeojs(queryIp),
+      OPTIONAL_PROVIDER_MS,
+    );
+    if (
+      geojsHint?.point &&
+      haversineMeters(
+        ipinfo.point.lat,
+        ipinfo.point.lon,
+        geojsHint.point.lat,
+        geojsHint.point.lon,
+      ) <= agreeM
+    ) {
+      points.push(geojsHint.point);
+    }
+    if (
+      ipApi?.point &&
+      haversineMeters(
+        ipinfo.point.lat,
+        ipinfo.point.lon,
+        ipApi.point.lat,
+        ipApi.point.lon,
+      ) <= agreeM
+    ) {
+      points.push(ipApi.point);
+    }
+  } else {
+    if (ip2loc?.point) points.push(ip2loc.point);
+    if (ipApi?.point) points.push(ipApi.point);
+
+    if (
+      isKrEarly &&
+      ip2loc?.point &&
+      ipApi?.point &&
+      haversineMeters(
+        ip2loc.point.lat,
+        ip2loc.point.lon,
+        ipApi.point.lat,
+        ipApi.point.lon,
+      ) > IP2LOC_REJECT_DISTANCE_M
+    ) {
+      const drop = points.findIndex((p) => p.provider === "ip2location");
+      if (drop >= 0) points.splice(drop, 1);
+      const geojsHint = await withTimeout(
+        lookupFromGeojs(queryIp),
+        OPTIONAL_PROVIDER_MS,
+      );
+      if (geojsHint?.point) points.push(geojsHint.point);
+    }
+  }
 
   let ipWho: Awaited<ReturnType<typeof lookupFromIpWho>> = null;
   let geojs: Awaited<ReturnType<typeof lookupFromGeojs>> = null;
 
-  if (!hasCoreGeo) {
+  if (points.length === 0) {
     [ipWho, geojs] = await lookupSupplementalProviders(queryIp);
-    if (isKrEarly) {
-      if (ipWho?.point) points.push(ipWho.point);
-      if (geojs?.point) points.push(geojs.point);
-      if (ipinfo?.point) points.push(ipinfo.point);
-    } else {
-      if (ipinfo?.point) points.push(ipinfo.point);
-      if (geojs?.point) points.push(geojs.point);
-      if (ipWho?.point) points.push(ipWho.point);
-    }
-  } else if (isKrEarly && ipinfo?.point) {
-    const ref = ipApi?.point || ip2loc?.point;
-    const includeIpinfo =
-      !ref ||
-      haversineMeters(
-        ipinfo.point.lat,
-        ipinfo.point.lon,
-        ref.lat,
-        ref.lon,
-      ) <= MAX_ALLOWED_ACCURACY_M;
-    if (includeIpinfo) points.push(ipinfo.point);
+    if (geojs?.point) points.push(geojs.point);
+    if (ipWho?.point && !isKrEarly) points.push(ipWho.point);
   }
 
   if (points.length === 0) {
@@ -687,9 +583,9 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
   }
 
   const countryCode =
+    ipinfo?.data?.countryCode ||
     ip2loc?.data?.countryCode ||
     ipApi?.data?.countryCode ||
-    ipinfo?.data?.countryCode ||
     ipWho?.data?.countryCode;
 
   const hintAgreement = cityHintsAgree(
@@ -698,12 +594,19 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
     ipinfo?.data?.city,
   );
 
-  const fused = fuseCoordinates(points, { countryCode, cityHintAgreement: hintAgreement })!;
+  const fused = fuseCoordinates(points, {
+    countryCode,
+    cityHintAgreement: hintAgreement,
+    ipinfoPrimary: Boolean(ipinfo?.point),
+    ipinfoPlus: ipinfo?.meta ?? null,
+  })!;
   let anchorLat = fused.lat;
   let anchorLon = fused.lon;
 
   const partialEarly = mergeFields(
     { lat: anchorLat, lon: anchorLon },
+    ipinfo?.data,
+    ipApi?.data,
     fused.trustLocalBin && ip2loc?.data
       ? {
           country: ip2loc.data.country,
@@ -714,8 +617,6 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
           timezone: ip2loc.data.timezone,
         }
       : null,
-    ipApi?.data,
-    ipinfo?.data,
     ipWho?.data,
   );
   const isKr = isKorea(partialEarly);
@@ -728,7 +629,7 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
       : Promise.resolve(null),
   ]);
 
-  const meta: IpinfoMeta | null = ipinfo?.meta ?? null;
+  const meta: IpinfoPlusIntel | null = ipinfo?.meta ?? null;
 
   if (crowdSibling) {
     return cacheAndReturn(queryIp, crowdSibling, startedAt);
@@ -769,14 +670,24 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
       dbIp,
     );
     const trustedSigungu = trusted.sigungu;
-    trustGeoCity = trusted.trustGeoCity;
+    trustGeoCity =
+      trusted.trustGeoCity && (meta?.trustGeoCity ?? true);
     const trustedSido =
-      fused.trustLocalBin && ip2loc?.data && !trusted.dbIpPreferred
-        ? mapRegionToKorean(ip2loc.data.region) || ip2loc.data.region
-        : mapRegionToKorean(dbIp?.stateProv) ||
-          ipApi?.data?.region ||
-          ipWho?.data?.region ||
-          partial.region;
+      ipinfo?.point
+        ? sidoFromRegionCode(meta?.regionCode) ||
+          mapRegionToKorean(ipinfo.data?.region) ||
+          ipinfo.data?.region ||
+          mapRegionToKorean(ipApi?.data?.region) ||
+          ipApi?.data?.region
+        : !fused.trustLocalBin && ipApi?.data?.region
+          ? mapRegionToKorean(ipApi.data.region) || ipApi.data.region
+          : fused.trustLocalBin && ip2loc?.data && !trusted.dbIpPreferred
+            ? mapRegionToKorean(ip2loc.data.region) || ip2loc.data.region
+            : mapRegionToKorean(dbIp?.stateProv) ||
+              mapRegionToKorean(ipApi?.data?.region) ||
+              ipApi?.data?.region ||
+              ipWho?.data?.region ||
+              partial.region;
     cityHintOverridesCoords = Boolean(
       trusted.dbIpPreferred ||
         (trustedSigungu &&
@@ -816,7 +727,7 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
       prefetchedCoords = await resolveAddressFromCoords(anchorLat, anchorLon);
     }
 
-    const allowRoadAddress = false;
+    const allowRoadAddress = meta?.allowRoadHint ?? false;
     const ipApiDistrict = (ipApi?.data as { district?: string } | undefined)
       ?.district;
     const ip2locDistrict = (ip2loc?.data as { district?: string } | undefined)
@@ -826,7 +737,14 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
       partial,
       anchorLat,
       anchorLon,
-      radiusM: fused.trustLocalBin ? fused.accuracyM : fused.spreadM || 0,
+      radiusM: meta?.radiusKm
+        ? Math.min(
+            fused.trustLocalBin ? fused.accuracyM : fused.spreadM || fused.accuracyM,
+            meta.radiusKm * 1000,
+          )
+        : fused.trustLocalBin
+          ? fused.accuracyM
+          : fused.spreadM || 0,
       regionCode: meta?.regionCode,
       trustedSigungu,
       trustedSido: mapRegionToKorean(trustedSido) || trustedSido,
@@ -915,6 +833,9 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
   let precisionScore = Math.round(
     fused.precisionScore * 0.35 + addressPrecision * 0.65,
   );
+  if (meta?.precisionDelta) {
+    precisionScore += Math.round(meta.precisionDelta * 0.5);
+  }
   precisionScore = capPrecisionForAccuracy(precisionScore, uncertaintyM);
   if (exactPin) {
     precisionScore = Math.min(95, precisionScore + 10);
@@ -930,6 +851,11 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
       (trustGeoCity ? "" : " · GeoIP 구·군 불일치 — 좌표 기준 표시");
   } else {
     accuracyNote = ESTIMATED_IP_ACCURACY_NOTE;
+    if (ipinfo?.point && meta) {
+      accuracyNote += ` · ${buildPlusAccuracyNotes(meta)}`;
+    } else if (!ipinfoPrimary) {
+      accuracyNote += " · IPINFO_TOKEN 미설정 — 저정밀 fallback";
+    }
     if (fused.trustLocalBin) {
       accuracyNote += ` · IP2Location 도시급 (±${Math.round(
         (fused.accuracyM <= IP2LOCATION_ALIGNED_ACCURACY_M
@@ -961,8 +887,10 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
     if (fused.maxProviderRadiusM && fused.maxProviderRadiusM > MAX_ALLOWED_ACCURACY_M) {
       accuracyNote += ` · 제공자 반경 ±${Math.round(fused.maxProviderRadiusM / 1000)}km`;
     }
-    if (meta?.isVpn) {
-      accuracyNote += " · VPN/프록시 — 실제 위치와 다를 수 있음";
+    if (meta?.isAnonymous) {
+      accuracyNote += meta.privacyServiceName
+        ? ` · ${meta.privacyServiceName} 감지`
+        : " · VPN/프록시 — 실제 위치와 다를 수 있음";
     }
   }
 
@@ -997,25 +925,53 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
     accuracyM: exactPin ? undefined : uncertaintyM,
     locationSource: exactPin ? "pinpoint" : "ip",
     accuracyNote,
-    geoProvider: fused.providers[0],
+    geoProvider: ipinfo?.point ? "ipinfo" : fused.providers[0],
     geoSources: [
       ...new Set([
+        ...(ipinfo?.point ? ["ipinfo"] : []),
         ...fused.providers,
         ...(ipApi && !fused.providers.includes("ip-api") ? ["ip-api"] : []),
-        ...(ipinfo ? ["ipinfo"] : []),
         ...(kisaWhois ? ["kisa-whois"] : []),
         ...(dbIp ? ["db-ip"] : []),
+        ...(ip2loc ? ["ip2location"] : []),
       ]),
     ],
-    isVpn: meta?.isVpn,
+    isVpn: meta?.isAnonymous,
     isMobile: meta?.isMobile,
+    isHosting: meta?.isHosting,
+    isAnycast: meta?.isAnycast,
+    isSatellite: meta?.isSatellite,
+    isProxy: meta?.isProxy,
+    isTor: meta?.isTor,
+    isRelay: meta?.isRelay,
+    privacyServiceName: meta?.privacyServiceName,
+    mobileCarrier: meta?.mobileCarrier,
+    mobileMcc: meta?.mobileMcc,
+    mobileMnc: meta?.mobileMnc,
+    asType: meta?.asType,
+    hostname: ipinfo?.data?.hostname ?? meta?.hostname,
+    continent: ipinfo?.data?.continent,
+    geonameId: ipinfo?.data?.geonameId,
+    geoLastChanged: meta?.geoLastChanged,
+    asLastChanged: meta?.asLastChanged,
+    ipinfoRadiusKm: meta?.radiusKm,
+    ipinfoPlus: meta?.isPlus,
+    geoTrustScore: meta?.geoTrustScore,
+    networkFlags: meta?.networkFlags,
     precisionScore,
     confidenceLevel:
-      uncertaintyM > MAX_ALLOWED_ACCURACY_M || fused.highDisagreement
+      meta?.isAnonymous || meta?.isHosting || meta?.isAnycast
         ? "low"
-        : exactPin
-          ? "high"
-          : fused.confidenceLevel,
+        : uncertaintyM > MAX_ALLOWED_ACCURACY_M || fused.highDisagreement
+          ? "low"
+          : exactPin
+            ? "high"
+            : meta?.isPlus &&
+                meta.geoTrustScore >= 75 &&
+                meta.radiusKm != null &&
+                meta.radiusKm <= 50
+              ? fused.confidenceLevel
+              : fused.confidenceLevel,
     roadAddress,
     legalAddress,
     sido,

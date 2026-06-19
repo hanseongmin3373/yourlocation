@@ -9,6 +9,8 @@ import {
   IP2LOCATION_CITY_ACCURACY_M,
   MAX_ALLOWED_ACCURACY_M,
 } from "./geo-accuracy";
+import type { IpinfoPlusIntel } from "./ipinfo-plus";
+import { plusAgreementRadiusM } from "./ipinfo-plus";
 
 export type GeoPointCandidate = {
   lat: number;
@@ -22,15 +24,29 @@ export type FuseOptions = {
   countryCode?: string;
   /** db-ip·ip-api 등 시·군·구 텍스트 합의 */
   cityHintAgreement?: boolean;
+  /** ipinfo.io 1차 엔진 — LITE BIN·저신뢰 제공자 배제 */
+  ipinfoPrimary?: boolean;
+  /** Plus 32속성 — radius·네트워크 플래그 기반 가중치·신뢰도 */
+  ipinfoPlus?: IpinfoPlusIntel | null;
 };
 
 const PROVIDER_WEIGHT: Record<string, number> = {
-  ip2location: 12,
-  ipinfo: 10,
-  "ip-api": 8,
-  geojs: 6,
+  ipinfo: 18,
+  ip2location: 4,
+  "ip-api": 6,
+  geojs: 7,
   ipwho: 3,
 };
+
+function effectiveIpinfoWeight(intel?: IpinfoPlusIntel | null): number {
+  if (!intel?.isPlus) return 14;
+  if (intel.radiusKm != null && intel.radiusKm <= 5) return 26;
+  if (intel.radiusKm != null && intel.radiusKm <= 15) return 22;
+  if (intel.radiusKm != null && intel.radiusKm <= 50) return 20;
+  if (intel.geoTrustScore >= 70) return 18;
+  if (intel.isHosting || intel.isAnycast || intel.isAnonymous) return 10;
+  return 14;
+}
 
 export function haversineMeters(
   lat1: number,
@@ -73,6 +89,20 @@ function isSeoulHubCoords(lat: number, lon: number): boolean {
     { lat: 37.5636, lon: 126.997, r: 2000 },
   ];
   return hubs.some((h) => haversineMeters(lat, lon, h.lat, h.lon) < h.r);
+}
+
+/** IP2Location LITE vs ip-api — 광역 불일치 시 LITE BIN 제외 (한국 IP 오배치 빈번) */
+export const IP2LOC_REJECT_DISTANCE_M = 25_000;
+
+function shouldDropIp2Location(
+  ip2loc: GeoPointCandidate | undefined,
+  ipApi: GeoPointCandidate | undefined,
+): boolean {
+  if (!ip2loc || !ipApi) return false;
+  return (
+    haversineMeters(ip2loc.lat, ip2loc.lon, ipApi.lat, ipApi.lon) >
+    IP2LOC_REJECT_DISTANCE_M
+  );
 }
 
 function effectiveWeight(c: GeoPointCandidate): number {
@@ -148,6 +178,10 @@ function filterKrCandidates(
   const ip2loc = candidates.find((c) => c.provider === "ip2location");
   const ipApi = candidates.find((c) => c.provider === "ip-api");
 
+  if (shouldDropIp2Location(ip2loc, ipApi)) {
+    return candidates.filter((c) => c.provider !== "ip2location");
+  }
+
   if (options?.cityHintAgreement && ip2loc && ipApi) {
     const ip2locVsApi = haversineMeters(
       ip2loc.lat,
@@ -183,6 +217,9 @@ function filterKrCandidates(
     if (aligned.some((c) => c.provider === "ip2location")) {
       const distant = candidates.length - aligned.length;
       if (distant > 0) {
+        if (aligned.length === 1 && shouldDropIp2Location(ip2loc, ipApi)) {
+          return candidates.filter((c) => c.provider !== "ip2location");
+        }
         return aligned.length === 1 ? [ip2loc] : aligned;
       }
     }
@@ -252,6 +289,19 @@ export function fuseCoordinates(
     if (valid.length === 0) return null;
   }
 
+  if (options?.ipinfoPrimary) {
+    const ipinfoPt = valid.find((c) => c.provider === "ipinfo");
+    if (ipinfoPt) {
+      ipinfoPt.weight = effectiveIpinfoWeight(options.ipinfoPlus);
+      const agreeM = plusAgreementRadiusM(options.ipinfoPlus);
+      valid = valid.filter(
+        (c) =>
+          c.provider === "ipinfo" ||
+          haversineMeters(c.lat, c.lon, ipinfoPt.lat, ipinfoPt.lon) <= agreeM,
+      );
+    }
+  }
+
   const providers = [...new Set(valid.map((c) => c.provider))];
   const spreadM = valid.length > 1 ? maxPairwiseSpread(valid) : 0;
   const highDisagreement =
@@ -270,12 +320,15 @@ export function fuseCoordinates(
   const ipApi = valid.find((c) => c.provider === "ip-api");
 
   let trustLocalBin = false;
-  if (isKr && ip2loc) {
+  if (isKr && ip2loc && !options?.ipinfoPrimary) {
     const ip2locStillPresent = valid.some((c) => c.provider === "ip2location");
     if (!ip2locStillPresent) {
       trustLocalBin = false;
     } else if (valid.length === 1) {
-      trustLocalBin = true;
+      trustLocalBin =
+        valid[0].provider === "ip2location" &&
+        ipApi != null &&
+        !shouldDropIp2Location(ip2loc, ipApi);
     } else {
       const others = valid.filter((c) => c.provider !== "ip2location");
       const nearestOther = Math.min(
@@ -376,6 +429,15 @@ export function fuseCoordinates(
   if (rawSpreadM > 80_000) precisionScore -= 18;
   if (valid.length >= 3) precisionScore += 4;
   else if (valid.length >= 2) precisionScore += 2;
+
+  if (options?.ipinfoPlus) {
+    precisionScore += options.ipinfoPlus.precisionDelta;
+    if (options.ipinfoPlus.isPlus && options.ipinfoPlus.radiusKm != null) {
+      if (options.ipinfoPlus.radiusKm <= 10) precisionScore += 6;
+      else if (options.ipinfoPlus.radiusKm > 150) precisionScore -= 8;
+    }
+  }
+
   precisionScore = Math.max(12, Math.min(hasStrongAgreement ? 88 : 85, precisionScore));
 
   if (trustLocalBin) {
@@ -397,21 +459,32 @@ export function fuseCoordinates(
   }
 
   const confidenceLevel: FusedCoordinates["confidenceLevel"] =
-    trustLocalBin
-      ? accuracyM <= IP2LOCATION_ALIGNED_ACCURACY_M
-        ? "high"
-        : "medium"
-      : spreadM > MAX_ALLOWED_ACCURACY_M || highDisagreement
-        ? "low"
-        : hasStrongAgreement
+    options?.ipinfoPlus?.isAnonymous ||
+    options?.ipinfoPlus?.isHosting ||
+    options?.ipinfoPlus?.isAnycast
+      ? "low"
+      : trustLocalBin
+        ? accuracyM <= IP2LOCATION_ALIGNED_ACCURACY_M
           ? "high"
-          : rawSpreadM > 80_000
-            ? "medium"
-            : precisionScore >= 72
+          : "medium"
+        : spreadM > MAX_ALLOWED_ACCURACY_M || highDisagreement
+          ? "low"
+          : options?.ipinfoPlus?.isPlus &&
+              options.ipinfoPlus.geoTrustScore >= 80 &&
+              options.ipinfoPlus.radiusKm != null &&
+              options.ipinfoPlus.radiusKm <= 15
+            ? hasStrongAgreement
               ? "high"
-              : precisionScore >= 48
+              : "medium"
+            : hasStrongAgreement
+              ? "high"
+              : rawSpreadM > 80_000
                 ? "medium"
-                : "low";
+                : precisionScore >= 72
+                  ? "high"
+                  : precisionScore >= 48
+                    ? "medium"
+                    : "low";
 
   return {
     lat,

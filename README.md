@@ -21,7 +21,10 @@
 - TypeScript
 - Tailwind CSS 4
 - Pretendard 폰트
-- ip-api.com (IP Geolocation)
+- ipinfo.io (1차 GeoIP, `IPINFO_TOKEN` 필수)
+- ip-api.com · geojs (보조 좌표·ISP)
+- IP2Location LITE BIN (ipinfo 미설정 시 fallback)
+- crowd DB (mylocation 등록 IP 우선)
 - Kakao Maps API
 
 ## 시작하기
@@ -42,8 +45,13 @@ cp .env.example .env.local
 
 [Kakao Developers](https://developers.kakao.com)에서 앱을 생성하고 **JavaScript 키**를 발급받아 설정합니다.
 
+[ipinfo.io](https://ipinfo.io/account/token)에서 **Plus/Lookup API 토큰**을 발급받아 설정합니다 (운영 필수).
+
 ```
 NEXT_PUBLIC_KAKAO_MAP_KEY=발급받은_JavaScript_키
+IPINFO_TOKEN=발급받은_ipinfo_토큰
+KAKAO_REST_API_KEY=발급받은_REST_API_키
+DATABASE_URL=postgresql://...
 ```
 
 카카오 개발자 콘솔에서 **플랫폼 > Web** 도메인에 아래 주소를 등록하세요.
@@ -64,7 +72,7 @@ npm run dev
 
 1. GitHub에 프로젝트를 푸시합니다.
 2. [Vercel](https://vercel.com)에서 프로젝트를 Import합니다.
-3. Environment Variables에 `NEXT_PUBLIC_KAKAO_MAP_KEY`를 추가합니다.
+3. Environment Variables에 `NEXT_PUBLIC_KAKAO_MAP_KEY`, `IPINFO_TOKEN`, `KAKAO_REST_API_KEY`, `DATABASE_URL`을 추가합니다.
 4. Deploy 후 Vercel 도메인을 카카오 개발자 콘솔 Web 플랫폼에 등록합니다.
 5. yourlocation.co.kr 도메인을 Vercel 프로젝트 Settings > Domains에 연결합니다.
 

@@ -9,6 +9,7 @@ import {
   getFastGpsPosition,
   gpsAccuracyM,
 } from "./ultra-gps";
+import { REGISTRATION_GPS_WARN_M } from "./geo-accuracy";
 
 import type { GeoLocationData } from "./types";
 
@@ -195,15 +196,22 @@ async function reverseGeocode(lat: number, lon: number) {
 
 
 
-/** GPS 좌표 미리보기 (등록 모달 — 빠른 fallback) */
+/** GPS 좌표 미리보기 (등록 모달 — 정확도 낮으면 고정밀 재시도) */
 export async function previewGpsLocation(): Promise<GpsPreview> {
-  const pos = await getRegisterGpsPosition();
+  let pos = await getRegisterGpsPosition();
+  let accuracyM = gpsAccuracyM(pos);
+
+  if (accuracyM > REGISTRATION_GPS_WARN_M) {
+    try {
+      pos = await getUltraPrecisePosition();
+      accuracyM = gpsAccuracyM(pos);
+    } catch {
+      // 빠른 GPS 결과 유지
+    }
+  }
 
   const lat = pos.coords.latitude;
-
   const lon = pos.coords.longitude;
-
-  const accuracyM = gpsAccuracyM(pos);
 
 
 

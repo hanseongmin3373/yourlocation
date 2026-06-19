@@ -53,12 +53,19 @@ export async function GET(request: NextRequest) {
     const remaining =
       access.remaining != null ? Math.max(0, access.remaining - 1) : null;
 
-    return NextResponse.json({
-      success: true,
-      data,
-      remaining,
-      isMember: access.isMember,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        data,
+        remaining,
+        isMember: access.isMember,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+        },
+      },
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "IP 조회에 실패했습니다.";

@@ -74,5 +74,6 @@ model IpLocationEntry {
   updatedAt      DateTime @updatedAt
 
   @@index([ipPrefix24])
+  @@index([isp])
   @@index([updatedAt(sort: Desc)])
 }

@@ -67,6 +67,43 @@ function normKey(s) {
   return String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+/** 주소 문자열에서 시·군·구·동 추출 (CSV에 행정구역 컬럼 없을 때) */
+function parseKoreanAddressParts(address) {
+  const text = String(address || "").trim();
+  if (!text) return {};
+
+  const m = text.match(
+    /^(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)(?:특별시|광역시|특별자치시|도|특별자치도)?\s*(\S+?(?:시|군|구))\s*(\S+?(?:동|읍|면|리|가))?/,
+  );
+  if (!m) return {};
+
+  const sidoMap = {
+    서울: "서울특별시",
+    부산: "부산광역시",
+    대구: "대구광역시",
+    인천: "인천광역시",
+    광주: "광주광역시",
+    대전: "대전광역시",
+    울산: "울산광역시",
+    세종: "세종특별자치시",
+    경기: "경기도",
+    강원: "강원특별자치도",
+    충북: "충청북도",
+    충남: "충청남도",
+    전북: "전북특별자치도",
+    전남: "전라남도",
+    경북: "경상북도",
+    경남: "경상남도",
+    제주: "제주특별자치도",
+  };
+
+  return {
+    sido: sidoMap[m[1]] || m[1],
+    sigungu: m[2] || undefined,
+    dong: m[3] || undefined,
+  };
+}
+
 function mapRow(raw) {
   const keys = Object.keys(raw);
   const byNorm = new Map(keys.map((k) => [normKey(k), k]));
@@ -94,10 +131,14 @@ function mapRow(raw) {
   );
 
   const address = String(pick(COLUMN_ALIASES.address) ?? "").trim();
-  const sido = pick(COLUMN_ALIASES.sido);
-  const sigungu = pick(COLUMN_ALIASES.sigungu);
-  const dong = pick(COLUMN_ALIASES.dong);
+  let sido = pick(COLUMN_ALIASES.sido);
+  let sigungu = pick(COLUMN_ALIASES.sigungu);
+  let dong = pick(COLUMN_ALIASES.dong);
   const roadAddress = pick(COLUMN_ALIASES.roadAddress);
+  const parsed = parseKoreanAddressParts(address);
+  if (!sido) sido = parsed.sido;
+  if (!sigungu) sigungu = parsed.sigungu;
+  if (!dong) dong = parsed.dong;
   const appliedAddress =
     String(pick(COLUMN_ALIASES.appliedAddress) ?? "").trim() ||
     [sido, sigungu, dong].filter(Boolean).join(" ") ||
@@ -120,7 +161,7 @@ function mapRow(raw) {
     roadAddress: roadAddress ? String(roadAddress) : address || null,
     isp: pick(COLUMN_ALIASES.isp) ? String(pick(COLUMN_ALIASES.isp)) : null,
     source: "mylocation-import",
-    userVerified: Boolean(address && address.length > 8),
+    userVerified: false,
     verifiedAt: verifiedAt && !Number.isNaN(verifiedAt.getTime()) ? verifiedAt : null,
     registerCount: 1,
   };
@@ -169,6 +210,13 @@ async function importRows(rows, { dryRun = false } = {}) {
 
 async function flushBatch(batch) {
   for (const row of batch) {
+    const existing = await prisma.ipLocationEntry.findUnique({
+      where: { ip: row.ip },
+      select: { userVerified: true },
+    });
+    // GPS+주소 확인 등록은 import로 덮어쓰지 않음
+    if (existing?.userVerified) continue;
+
     await prisma.ipLocationEntry.upsert({
       where: { ip: row.ip },
       create: row,

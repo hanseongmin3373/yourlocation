@@ -45,6 +45,13 @@ export const KR_REGION_CODE_TO_SIDO: Record<string, string> = {
   "50": "제주특별자치도",
 };
 
+/** ipinfo Plus `geo.region_code` (예: "11", "26") → 시·도 */
+export function sidoFromRegionCode(regionCode?: string): string | undefined {
+  if (!regionCode?.trim()) return undefined;
+  const code = regionCode.replace(/\D/g, "").slice(0, 2);
+  return code ? KR_REGION_CODE_TO_SIDO[code] : undefined;
+}
+
 export const KR_CITY_TO_KO: Record<string, string> = {
   Seoul: "서울",
   Seongnam: "성남시",
@@ -80,6 +87,11 @@ export const KR_CITY_TO_KO: Record<string, string> = {
   Guro: "구로구",
   Geumcheon: "금천구",
   Dongjak: "동작구",
+  "Geumcheon-gu": "금천구",
+  "Geumjeong-gu": "금정구",
+  "Seo-gu": "서구",
+  "Jung-gu": "중구",
+  "Yongsan-gu": "용산구",
   Eunpyeong: "은평구",
   Seodaemun: "서대문구",
   Nowon: "노원구",
@@ -292,9 +304,7 @@ export function buildAllKoreanQueries(input: {
     if (!seen.has(key)) seen.add(key);
   };
 
-  const sidoFromCode = input.regionCode
-    ? KR_REGION_CODE_TO_SIDO[input.regionCode.replace(/\D/g, "").slice(0, 2)]
-    : undefined;
+  const sidoFromCode = sidoFromRegionCode(input.regionCode);
   const sido = mapRegionToKorean(input.region) || sidoFromCode || "";
   const sigungu = mapCityToKorean(input.city);
 

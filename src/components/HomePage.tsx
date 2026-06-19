@@ -64,7 +64,9 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
   const [registerTotalCount, setRegisterTotalCount] = useState<number | null>(
     null,
   );
+  const [addressSearchOnly, setAddressSearchOnly] = useState(false);
   const autoGpsRequested = useRef(false);
+  const skipAutoGps = useRef(false);
 
   const fetchPoliceStation = useCallback(
     async (
@@ -252,50 +254,29 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
           throw new Error(result.error || "위치 등록에 실패했습니다.");
         }
 
-        const exactPin = Boolean(preview.userVerified);
-
-        if (preview.userVerified) {
-          markLocationRegistered();
-          setIsLocationRegistered(true);
+        if (!preview.userVerified) {
+          throw new Error(
+            "주소 확인 후 등록해 주세요. GPS 자동 감지 주소만으로는 저장되지 않습니다.",
+          );
         }
+
+        const data = await fetchRemoteIp(clientIp);
+        if (!data.userVerified) {
+          throw new Error(
+            "등록은 완료됐지만 확인 주소가 반영되지 않았습니다. 잠시 후 다시 시도해 주세요.",
+          );
+        }
+
+        markLocationRegistered();
+        setIsLocationRegistered(true);
+        setAddressSearchOnly(false);
         setRegisterModalOpen(false);
         setGpsPreview(null);
         setRegisterTotalCount(result.totalCount ?? null);
         setCrowdStatsRefresh((n) => n + 1);
         sessionStorage.removeItem(REGISTER_DISMISS_KEY);
         sessionStorage.setItem(DB_REFRESH_KEY, "1");
-
-        setInfoTitle("내 IP 위치 (GPS 등록)");
-        applyLocation({
-          ip: clientIp,
-          country: "대한민국",
-          countryCode: "KR",
-          region: preview.sido || "",
-          city: preview.sigungu || "",
-          zip: "",
-          lat: preview.lat,
-          lon: preview.lon,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          isp: "",
-          org: "",
-          as: "",
-          address: preview.address,
-          dong: preview.dong,
-          sido: preview.sido,
-          sigungu: preview.sigungu,
-          roadAddress: preview.roadAddress || preview.address,
-          locationSource: preview.userVerified ? "pinpoint" : "gps",
-          accuracyNote: preview.userVerified
-            ? "사용자 확인 주소 — 오차 없음"
-            : `GPS 등록 DB 반영 · 적용주소 ${result.appliedAddress || preview.appliedAddress}`,
-          accuracyM: exactPin ? undefined : preview.accuracyM,
-          precisionScore: preview.userVerified ? 95 : exactPin ? 88 : 65,
-          confidenceLevel: exactPin ? "high" : "medium",
-          expertMode: true,
-          exactPin,
-          userVerified: preview.userVerified,
-          geoSources: ["crowd-db"],
-        });
+        setInfoTitle("내 IP 위치 (확인됨 · 오차 없음)");
       } catch (err) {
         setRegisterError(
           err instanceof Error ? err.message : "위치 등록에 실패했습니다.",
@@ -304,7 +285,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
         setRegisterLoading(false);
       }
     },
-    [applyLocation, clientIp],
+    [clientIp, fetchRemoteIp],
   );
 
   const handleCloseRegisterModal = useCallback(() => {
@@ -338,6 +319,9 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
   const openRegisterModal = useCallback(() => {
     setRegisterError(null);
     setGpsPreview(null);
+    setAddressSearchOnly(false);
+    skipAutoGps.current = false;
+    autoGpsRequested.current = false;
     setRegisterModalOpen(true);
   }, []);
 
@@ -360,6 +344,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
       !registerModalOpen ||
       isLocationRegistered ||
       autoGpsRequested.current ||
+      skipAutoGps.current ||
       !clientIp ||
       typeof navigator === "undefined" ||
       !navigator.geolocation
@@ -419,13 +404,15 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
               markLocationRegistered();
               setIsLocationRegistered(true);
               setInfoTitle("내 IP 위치 (확인됨 · 오차 없음)");
-            } else {
+            } else if (registered) {
               clearLocationConsent();
-              sessionStorage.removeItem(REGISTER_DISMISS_KEY);
               setIsLocationRegistered(false);
+              skipAutoGps.current = true;
+              autoGpsRequested.current = false;
+              setAddressSearchOnly(true);
               setRegisterModalOpen(true);
               setRegisterError(
-                "정확한 위치(오차 없음)를 위해 GPS 등록 후 주소를 확인해 주세요.",
+                "저장된 주소 확인이 필요합니다. 아래에서 실제 도로명·지번을 검색해 등록해 주세요.",
               );
             }
           }
@@ -467,7 +454,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
     : null;
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="app-shell bg-white">
       <Header />
 
       <LocationRegisterModal
@@ -477,28 +464,17 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
         error={registerError}
         preview={gpsPreview}
         totalCount={registerTotalCount}
+        addressSearchOnly={addressSearchOnly}
         onRequestLocation={() => void handleRequestLocation()}
         onRegister={(preview) => void handleRegisterLocation(preview)}
         onClose={handleCloseRegisterModal}
       />
 
-      <LocationRegisterHero
-        isRegistered={Boolean(locationData?.userVerified)}
-        clientIp={clientIp}
-        onRegister={openRegisterModal}
-        crowdStatsRefresh={crowdStatsRefresh}
-      />
-
-      <div className="mx-auto max-w-5xl px-4 py-3 sm:px-6">
-        <div className="mb-3 space-y-2">
-          <UtilityLinks ip={clientIp} />
-          <UsageBanner />
-          {clientIp && <IpBanner ip={clientIp} />}
-        </div>
-
-        <section className="mb-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div className="flex-1">
+      {/* 상단 검색·배너 (얇은 한 줄 영역) */}
+      <div className="shrink-0 border-b border-slate-200 bg-white px-3 py-2 sm:px-4">
+        <div className="mx-auto flex max-w-[1600px] flex-col gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0 flex-1">
               <IpSearchForm
                 defaultIp={clientIp}
                 clientIp={clientIp}
@@ -508,28 +484,10 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
                 disabledMessage="위치 등록 후 IP·주소 검색이 가능합니다."
               />
             </div>
-            <div className="flex shrink-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-4">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               {locationSummary && (
-                <p className="text-sm text-slate-700">
-                  위치 :{" "}
-                  <strong className="font-semibold text-slate-900">
-                    {locationSummary}
-                  </strong>
-                  {isPrecise ? (
-                    <span className="ml-1 text-xs font-medium text-emerald-700">
-                      {locationData?.locationSource === "gps"
-                        ? "(GPS)"
-                        : "(좌표 고정)"}
-                    </span>
-                  ) : locationData ? (
-                    <span className="ml-1 text-xs font-medium text-blue-700">
-                      (동·구 추정
-                      {locationData.accuracyM
-                        ? ` ±${Math.round(locationData.accuracyM)}m`
-                        : ""}
-                      )
-                    </span>
-                  ) : null}
+                <p className="hidden max-w-[220px] truncate text-xs text-slate-600 md:block">
+                  <strong className="text-slate-900">{locationSummary}</strong>
                 </p>
               )}
               <CurrentLocationButton
@@ -538,100 +496,110 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
               />
             </div>
           </div>
-          <p className="mt-2 text-xs text-violet-800">
-            {isPrecise ? (
-              <>
-                <strong className="font-semibold">정밀 모드</strong> — 오차
-                5km 이내 단일 좌표. 본인 IP는 GPS 실측·등록 DB를 우선합니다.
-              </>
-            ) : (
-              <>
-                <strong className="font-semibold">동·구 추정 모드</strong> —
-                mylocation과 같이 시·군·구·동 단위로 표시합니다. 도로명·오차
-                없는 위치는 해당 IP의 GPS 등록·주소 확인 데이터가 있을 때만
-                제공됩니다.
-              </>
-            )}
-          </p>
-        </section>
-
-        {accuracyExceeded && (
-          <div
-            role="status"
-            className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
-          >
-            추정 오차가 5km를 초과합니다. 정밀 핀 표시가 제한됩니다 —{" "}
-            <button
-              type="button"
-              onClick={openRegisterModal}
-              className="font-semibold underline hover:text-amber-900"
-            >
-              위치 등록/재등록
-            </button>
-            을 권장합니다.
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <UtilityLinks ip={clientIp} />
+            <UsageBanner />
+            {clientIp && <IpBanner ip={clientIp} />}
           </div>
-        )}
-
-        {error && (
-          <div
-            role="alert"
-            className="mb-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-          >
-            {error}
-          </div>
-        )}
-      </div>
-
-      <section className="mb-6 w-full border-y border-slate-200 bg-slate-50">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-2 sm:px-6">
-          <h2 className="text-sm font-bold text-emerald-800">지도</h2>
-          {mapPosition && locationData && (
-            <div className="flex gap-3 text-xs font-medium">
-              <a
-                href={`https://map.naver.com/v5/search/${locationData.lat},${locationData.lon}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-slate-500 hover:text-slate-800"
-              >
-                NAVER
-              </a>
-              <a
-                href={`https://map.kakao.com/link/map/${encodeURIComponent(locationSummary ?? "위치")},${locationData.lat},${locationData.lon}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-slate-500 hover:text-slate-800"
-              >
-                DAUM
-              </a>
+          {(accuracyExceeded || error) && (
+            <div className="space-y-1">
+              {accuracyExceeded && (
+                <div
+                  role="status"
+                  className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950"
+                >
+                  추정 오차 5km 초과 —{" "}
+                  <button
+                    type="button"
+                    onClick={openRegisterModal}
+                    className="font-semibold underline"
+                  >
+                    위치 등록/재등록
+                  </button>
+                </div>
+              )}
+              {error && (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+                >
+                  {error}
+                </div>
+              )}
             </div>
           )}
         </div>
-        <KakaoMap
-          position={mapPosition}
-          label={isPrecise ? locationData?.address : undefined}
-          policeStation={policeStation}
-          mapLevel={isPrecise ? 2 : 6}
-          accuracyRadiusM={mapAccuracyRadius}
-          exactPin={isPrecise}
-          heightClass="h-[50vh] min-h-[320px]"
-          fullBleed
-        />
-      </section>
+      </div>
 
-      <main className="mx-auto max-w-5xl px-4 pb-8 sm:px-6">
-        <LocationInfo
-          data={locationData}
-          loading={loading || geoLoading}
-          title={infoTitle}
-          policeStation={policeStation}
-          policeLoading={policeLoading}
-        />
-      </main>
+      {/* 좌: 지도 50% | 우: 위치 정보 50% */}
+      <div className="app-split" dir="ltr">
+        <section className="app-split-map border-r border-slate-200" aria-label="지도">
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-1.5">
+            <h2 className="text-xs font-bold text-emerald-800 sm:text-sm">지도</h2>
+            {mapPosition && locationData && (
+              <div className="flex gap-2 text-[11px] font-medium sm:text-xs">
+                <a
+                  href={`https://map.naver.com/v5/search/${locationData.lat},${locationData.lon}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-slate-500 hover:text-slate-800"
+                >
+                  NAVER
+                </a>
+                <a
+                  href={`https://map.kakao.com/link/map/${encodeURIComponent(locationSummary ?? "위치")},${locationData.lat},${locationData.lon}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-slate-500 hover:text-slate-800"
+                >
+                  DAUM
+                </a>
+              </div>
+            )}
+          </div>
+          <div className="relative min-h-0 flex-1 bg-slate-100">
+            <KakaoMap
+              position={mapPosition}
+              label={isPrecise ? locationData?.address : undefined}
+              policeStation={policeStation}
+              mapLevel={isPrecise ? 2 : 6}
+              accuracyRadiusM={mapAccuracyRadius}
+              exactPin={isPrecise}
+              fillContainer
+              fullBleed
+            />
+          </div>
+        </section>
 
-      <SiteFooter
-        onEraseData={() => void handleEraseRegistration()}
-        crowdStatsRefresh={crowdStatsRefresh}
-      />
+        <section className="app-split-info bg-slate-50/80" aria-label="위치 정보">
+          {!locationData?.userVerified || !isLocationRegistered ? (
+            <LocationRegisterHero
+              compact
+              isRegistered={Boolean(
+                locationData?.userVerified && isLocationRegistered,
+              )}
+              clientIp={clientIp}
+              onRegister={openRegisterModal}
+              crowdStatsRefresh={crowdStatsRefresh}
+            />
+          ) : null}
+          <div className="app-split-info-scroll p-3 sm:p-4">
+            <LocationInfo
+              data={locationData}
+              loading={loading || geoLoading}
+              title={infoTitle}
+              policeStation={policeStation}
+              policeLoading={policeLoading}
+            />
+            <div className="mt-4 border-t border-slate-200 pt-4">
+              <SiteFooter
+                onEraseData={() => void handleEraseRegistration()}
+                crowdStatsRefresh={crowdStatsRefresh}
+              />
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

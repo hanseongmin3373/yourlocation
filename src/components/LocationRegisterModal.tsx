@@ -1,8 +1,12 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { AddressSearchHit, GpsPreview } from "@/lib/client-location";
 import { searchRegisterAddress } from "@/lib/client-location";
+import {
+  REGISTRATION_GPS_BLOCK_CONFIRM_M,
+  REGISTRATION_GPS_WARN_M,
+} from "@/lib/geo-accuracy";
 
 interface LocationRegisterModalProps {
   open: boolean;
@@ -11,6 +15,8 @@ interface LocationRegisterModalProps {
   error?: string | null;
   preview: GpsPreview | null;
   totalCount?: number | null;
+  /** GPS 자동 감지 생략 — 주소 검색부터 */
+  addressSearchOnly?: boolean;
   onRequestLocation: () => void;
   onRegister: (preview: GpsPreview) => void;
   onClose: () => void;
@@ -25,6 +31,7 @@ export default function LocationRegisterModal({
   error,
   preview,
   totalCount,
+  addressSearchOnly = false,
   onRequestLocation,
   onRegister,
   onClose,
@@ -39,6 +46,28 @@ export default function LocationRegisterModal({
   );
 
   const activePreview = confirmedPreview ?? preview;
+
+  const lowGpsAccuracy =
+    preview != null && preview.accuracyM > REGISTRATION_GPS_WARN_M;
+  const blockGpsConfirm =
+    preview != null && preview.accuracyM > REGISTRATION_GPS_BLOCK_CONFIRM_M;
+
+  useEffect(() => {
+    if (!open) return;
+    if (addressSearchOnly) {
+      setStep("search");
+    }
+  }, [open, addressSearchOnly]);
+
+  useEffect(() => {
+    if (!preview || confirmedPreview) return;
+    if (blockGpsConfirm) {
+      setStep("search");
+      setSearchError(
+        `GPS 정확도가 ±${Math.round(preview.accuracyM)}m로 낮습니다. Wi-Fi·GPS를 켠 뒤 실제 도로명·지번을 검색해 주세요.`,
+      );
+    }
+  }, [preview, confirmedPreview, blockGpsConfirm]);
 
   const resetFlow = useCallback(() => {
     setStep("gps");
@@ -86,11 +115,10 @@ export default function LocationRegisterModal({
   };
 
   const handlePickAddress = (hit: AddressSearchHit) => {
-    if (!preview) return;
     const verified: GpsPreview = {
-      ...preview,
       lat: hit.lat,
       lon: hit.lon,
+      accuracyM: preview?.accuracyM ?? 15,
       address: hit.roadAddress || hit.address,
       roadAddress: hit.roadAddress || hit.address,
       appliedAddress: hit.roadAddress || hit.address,
@@ -98,8 +126,8 @@ export default function LocationRegisterModal({
       sido: hit.sido,
       sigungu: hit.sigungu,
       userVerified: true,
-      gpsLat: preview.gpsLat ?? preview.lat,
-      gpsLon: preview.gpsLon ?? preview.lon,
+      gpsLat: preview?.gpsLat ?? preview?.lat ?? hit.lat,
+      gpsLon: preview?.gpsLon ?? preview?.lon ?? hit.lon,
     };
     setConfirmedPreview(verified);
     setStep("confirm");
@@ -132,7 +160,7 @@ export default function LocationRegisterModal({
           저장되어 오차 없이 표시됩니다.
         </p>
 
-        {!preview && (
+        {!preview && !addressSearchOnly && (
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
@@ -162,6 +190,11 @@ export default function LocationRegisterModal({
                     </th>
                     <td className="px-3 py-2 text-slate-900">
                       {preview.accuracyM}m
+                      {lowGpsAccuracy && (
+                        <span className="mt-1 block text-xs font-medium text-amber-800">
+                          정확도가 낮아 자동 감지 주소는 신뢰할 수 없습니다.
+                        </span>
+                      )}
                     </td>
                   </tr>
                 </tbody>
@@ -174,7 +207,8 @@ export default function LocationRegisterModal({
               <button
                 type="button"
                 onClick={handleConfirmAddress}
-                className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-emerald-700"
+                disabled={blockGpsConfirm}
+                className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 맞습니다 — 이 주소로 등록
               </button>
@@ -183,16 +217,16 @@ export default function LocationRegisterModal({
                 onClick={() => setStep("search")}
                 className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
               >
-                아니요 — 주소 검색
+                {blockGpsConfirm ? "주소 검색 (권장)" : "아니요 — 주소 검색"}
               </button>
             </div>
           </div>
         )}
 
-        {preview && step === "search" && (
+        {(preview && step === "search") || (addressSearchOnly && step === "search") ? (
           <div className="mt-4 space-y-3">
             <p className="text-xs text-slate-600">
-              실제 도로명·지번을 입력하세요. (예: 논현로 526, 강남대로12길 44)
+              실제 도로명·지번을 입력하세요. (예: 매봉로2가길 3, 논현로 526)
             </p>
             <div className="flex gap-2">
               <input
@@ -239,15 +273,17 @@ export default function LocationRegisterModal({
                 ))}
               </ul>
             )}
-            <button
-              type="button"
-              onClick={() => setStep("gps")}
-              className="text-xs text-slate-500 hover:text-slate-800"
-            >
-              ← GPS 감지 주소로 돌아가기
-            </button>
+            {preview && (
+              <button
+                type="button"
+                onClick={() => setStep("gps")}
+                className="text-xs text-slate-500 hover:text-slate-800"
+              >
+                ← GPS 감지 주소로 돌아가기
+              </button>
+            )}
           </div>
-        )}
+        ) : null}
 
         {activePreview && step === "confirm" && (
           <div className="mt-4 space-y-3">

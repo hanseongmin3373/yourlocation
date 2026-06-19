@@ -26,6 +26,27 @@ export interface GeoLocationData {
   geoProvider?: string;
   isVpn?: boolean;
   isMobile?: boolean;
+  isHosting?: boolean;
+  isAnycast?: boolean;
+  isSatellite?: boolean;
+  isProxy?: boolean;
+  isTor?: boolean;
+  isRelay?: boolean;
+  /** ipinfo Plus — VPN/프록시 서비스명 (NordVPN 등) */
+  privacyServiceName?: string;
+  mobileCarrier?: string;
+  mobileMcc?: string;
+  mobileMnc?: string;
+  asType?: string;
+  hostname?: string;
+  continent?: string;
+  geonameId?: string;
+  geoLastChanged?: string;
+  asLastChanged?: string;
+  ipinfoRadiusKm?: number;
+  ipinfoPlus?: boolean;
+  geoTrustScore?: number;
+  networkFlags?: string[];
   /** 초정밀 모드 신뢰도 점수 (0–100) */
   precisionScore?: number;
   confidenceLevel?: "high" | "medium" | "low";

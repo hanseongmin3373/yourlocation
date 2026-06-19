@@ -37,6 +37,33 @@ function confidenceColor(level?: GeoLocationData["confidenceLevel"]): string {
   return "text-slate-700 bg-slate-50 border-slate-200";
 }
 
+function networkFlagLabel(flags?: string[]): string {
+  if (!flags?.length) return "-";
+  const map: Record<string, string> = {
+    vpn: "VPN",
+    proxy: "프록시",
+    tor: "Tor",
+    relay: "릴레이",
+    hosting: "호스팅/DC",
+    anycast: "Anycast",
+    mobile: "모바일",
+    satellite: "위성",
+  };
+  return flags.map((f) => map[f] || f).join(", ");
+}
+
+function asTypeLabel(t?: string): string {
+  if (!t) return "-";
+  const map: Record<string, string> = {
+    isp: "ISP",
+    hosting: "호스팅",
+    education: "교육",
+    government: "정부",
+    business: "기업",
+  };
+  return map[t] || t;
+}
+
 export default function LocationInfo({
   data,
   loading,
@@ -156,6 +183,56 @@ export default function LocationInfo({
         {data.geoSources && data.geoSources.length > 0 && (
           <InfoRow label="융합 DB" value={data.geoSources.join(" + ")} />
         )}
+        {data.ipinfoPlus && (
+          <>
+            <InfoRow
+              label="ipinfo Plus"
+              value={
+                data.ipinfoRadiusKm != null
+                  ? `반경 ±${data.ipinfoRadiusKm}km${
+                      data.geoTrustScore != null
+                        ? ` · 신뢰 ${data.geoTrustScore}%`
+                        : ""
+                    }`
+                  : "활성"
+              }
+            />
+            {data.networkFlags && data.networkFlags.length > 0 && (
+              <InfoRow
+                label="네트워크 유형"
+                value={networkFlagLabel(data.networkFlags)}
+              />
+            )}
+            {data.mobileCarrier && (
+              <InfoRow
+                label="이동통신사"
+                value={`${data.mobileCarrier}${
+                  data.mobileMcc ? ` (MCC ${data.mobileMcc}` : ""
+                }${data.mobileMnc ? ` MNC ${data.mobileMnc})` : data.mobileMcc ? ")" : ""}`}
+              />
+            )}
+            {data.privacyServiceName && (
+              <InfoRow label="익명 서비스" value={data.privacyServiceName} />
+            )}
+            {data.asType && (
+              <InfoRow label="ASN 유형" value={asTypeLabel(data.asType)} />
+            )}
+            {data.hostname && (
+              <InfoRow label="호스트명" value={data.hostname} />
+            )}
+            {(data.geoLastChanged || data.asLastChanged) && (
+              <InfoRow
+                label="변경 이력"
+                value={[
+                  data.geoLastChanged && `위치 ${data.geoLastChanged}`,
+                  data.asLastChanged && `ASN ${data.asLastChanged}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              />
+            )}
+          </>
+        )}
         {data.addressSource && data.locationSource === "ip" && (
           <InfoRow label="주소 출처" value={data.addressSource} />
         )}
@@ -179,16 +256,25 @@ export default function LocationInfo({
         (data.locationSource === "ip" || data.locationSource === "crowd") && (
           <p
             className={`mt-4 rounded-xl border px-4 py-3 text-xs leading-relaxed ${
-              data.isVpn
+              data.isVpn || data.privacyServiceName
                 ? "border-red-200 bg-red-50 text-red-900"
-                : lowAccuracy
-                  ? "border-amber-200 bg-amber-50 text-amber-900"
-                  : "border-violet-100 bg-violet-50 text-violet-900"
+                : data.isHosting || data.isAnycast
+                  ? "border-orange-200 bg-orange-50 text-orange-950"
+                  : lowAccuracy
+                    ? "border-amber-200 bg-amber-50 text-amber-900"
+                    : "border-violet-100 bg-violet-50 text-violet-900"
             }`}
           >
-            {data.isVpn && (
+            {(data.isVpn || data.privacyServiceName) && (
               <span className="mb-1 block font-semibold">
-                VPN/프록시가 감지되었습니다 — 표시 위치가 실제와 다를 수 있습니다.
+                {data.privacyServiceName
+                  ? `${data.privacyServiceName} 감지 — 표시 위치가 실제와 다를 수 있습니다.`
+                  : "VPN/프록시가 감지되었습니다 — 표시 위치가 실제와 다를 수 있습니다."}
+              </span>
+            )}
+            {data.isHosting && !data.isVpn && (
+              <span className="mb-1 block font-semibold">
+                호스팅·데이터센터 IP — 거주지 위치가 아닐 수 있습니다.
               </span>
             )}
             {data.accuracyNote}

@@ -3,12 +3,18 @@ import {
   buildDistrictAddress,
   CROWD_CLUSTER_MAX_ACCURACY_M,
   CROWD_CLUSTER_MAX_SPREAD_M,
+  MYLOCATION_IMPORT_MAX_ACCURACY_M,
+  MYLOCATION_IMPORT_MAX_SPREAD_M,
   VERIFIED_ZERO_ERROR_NOTE,
 } from "./geo-accuracy";
 import { haversineMeters } from "./geo-fusion";
 import { resolveAddressFromCoords } from "./kakao-geocode";
 import { prisma } from "./db";
 import type { GeoLocationData } from "./types";
+import type { Prisma } from "@prisma/client";
+
+const GPS_CLUSTER_RECENCY_DAYS = 365;
+const MYLOCATION_IMPORT_SOURCE = "mylocation-import";
 
 export type CrowdRegisterInput = {
   ip: string;
@@ -96,6 +102,39 @@ function clusterSpreadM(entries: { lat: number; lon: number }[]): number {
   return max;
 }
 
+/** GPS 자발 등록(최근·고정밀) + mylocation-import(연령 무관) 클러스터 조건 */
+function buildClusterQualityFilter(since: Date): Prisma.IpLocationEntryWhereInput {
+  return {
+    OR: [
+      {
+        source: { not: MYLOCATION_IMPORT_SOURCE },
+        updatedAt: { gte: since },
+        accuracyM: { lte: CROWD_CLUSTER_MAX_ACCURACY_M },
+      },
+      {
+        source: MYLOCATION_IMPORT_SOURCE,
+        accuracyM: { lte: MYLOCATION_IMPORT_MAX_ACCURACY_M },
+      },
+    ],
+  };
+}
+
+function maxSpreadForCluster(
+  entries: { source?: string }[],
+  gpsSpreadLimit: number,
+): number {
+  const hasImport = entries.some((e) => e.source === MYLOCATION_IMPORT_SOURCE);
+  return hasImport ? MYLOCATION_IMPORT_MAX_SPREAD_M : gpsSpreadLimit;
+}
+
+type DistrictFallback = {
+  address: string;
+  sido: string | null;
+  sigungu: string | null;
+  dong: string | null;
+  source?: string;
+};
+
 function toCrowdGeoData(
   ip: string,
   entry: {
@@ -157,22 +196,32 @@ function toCrowdGeoData(
   };
 }
 
-/** 클러스터 좌표 기준 역지오코딩 — 타 IP 도로명 주소 오염 방지 */
+/** 클러스터 좌표 기준 역지오코딩 — 저장된 시·군·구·동 우선 (mylocation-import) */
 async function resolveClusterDisplay(
   lat: number,
   lon: number,
-  fallback: {
-    address: string;
-    sido: string | null;
-    sigungu: string | null;
-    dong: string | null;
-  },
+  fallback: DistrictFallback,
 ): Promise<{
   address: string;
   sido?: string;
   sigungu?: string;
   dong?: string;
 }> {
+  const fromStored = buildDistrictAddress({
+    sido: fallback.sido || undefined,
+    sigungu: fallback.sigungu || undefined,
+    dong: fallback.dong || undefined,
+    includeDong: true,
+  });
+  if (fromStored && (fallback.sido || fallback.sigungu)) {
+    return {
+      address: fromStored,
+      sido: fallback.sido || undefined,
+      sigungu: fallback.sigungu || undefined,
+      dong: fallback.dong || undefined,
+    };
+  }
+
   const fromCoords = await resolveAddressFromCoords(lat, lon);
   if (fromCoords) {
     return {
@@ -294,7 +343,8 @@ export async function lookupCrowdIspCluster(
   if (!prefix16) return null;
 
   const since = new Date();
-  since.setDate(since.getDate() - 365);
+  since.setDate(since.getDate() - GPS_CLUSTER_RECENCY_DAYS);
+  const quality = buildClusterQualityFilter(since);
 
   let resolvedIsp = isp?.trim() || "";
   if (!resolvedIsp) {
@@ -302,8 +352,7 @@ export async function lookupCrowdIspCluster(
       where: {
         ip: { startsWith: `${prefix16}.` },
         isp: { not: null },
-        updatedAt: { gte: since },
-        accuracyM: { lte: CROWD_CLUSTER_MAX_ACCURACY_M },
+        ...quality,
       },
       orderBy: [{ registerCount: "desc" }, { accuracyM: "asc" }],
       select: { isp: true },
@@ -316,8 +365,7 @@ export async function lookupCrowdIspCluster(
     where: {
       ip: { startsWith: `${prefix16}.` },
       isp: resolvedIsp,
-      updatedAt: { gte: since },
-      accuracyM: { lte: CROWD_CLUSTER_MAX_ACCURACY_M },
+      ...quality,
     },
     orderBy: [{ accuracyM: "asc" }, { registerCount: "desc" }],
     take: 12,
@@ -326,7 +374,11 @@ export async function lookupCrowdIspCluster(
   if (cluster.length < 2) return null;
 
   const spread = clusterSpreadM(cluster);
-  if (spread > CROWD_CLUSTER_MAX_SPREAD_M * 4) return null;
+  const spreadLimit = maxSpreadForCluster(
+    cluster,
+    CROWD_CLUSTER_MAX_SPREAD_M * 4,
+  );
+  if (spread > spreadLimit) return null;
 
   const { lat, lon } = weightedMedianCoords(cluster);
   const best = cluster[0];
@@ -371,13 +423,13 @@ export async function lookupCrowdSibling(
   }
 
   const since = new Date();
-  since.setDate(since.getDate() - 365);
+  since.setDate(since.getDate() - GPS_CLUSTER_RECENCY_DAYS);
+  const quality = buildClusterQualityFilter(since);
 
   const siblings = await prisma.ipLocationEntry.findMany({
     where: {
       ipPrefix24: { in: [...prefixes] },
-      updatedAt: { gte: since },
-      accuracyM: { lte: CROWD_CLUSTER_MAX_ACCURACY_M },
+      ...quality,
       ...(isp ? { isp } : {}),
     },
     orderBy: [{ accuracyM: "asc" }, { registerCount: "desc" }],
@@ -387,7 +439,11 @@ export async function lookupCrowdSibling(
   if (siblings.length === 0) return null;
 
   const spread = clusterSpreadM(siblings);
-  if (spread > CROWD_CLUSTER_MAX_SPREAD_M * 2) return null;
+  const spreadLimit = maxSpreadForCluster(
+    siblings,
+    CROWD_CLUSTER_MAX_SPREAD_M * 2,
+  );
+  if (spread > spreadLimit) return null;
 
   const { lat, lon } = weightedMedianCoords(siblings);
   const best = siblings[0];
@@ -461,7 +517,7 @@ export async function lookupCrowdIpExact(
   );
 }
 
-/** 등록 DB 우선 조회 — 동일 IP만 오차 없음, /24 클러스터는 추정 */
+/** 등록 DB 우선 조회 — exact → /24 → 인접대역 → ISP /16 */
 export async function lookupCrowdIp(ip: string): Promise<GeoLocationData | null> {
   const exact = await lookupCrowdIpExact(ip);
   if (exact) return exact;
@@ -471,19 +527,21 @@ export async function lookupCrowdIp(ip: string): Promise<GeoLocationData | null>
   if (!prefix) return null;
 
   const since = new Date();
-  since.setDate(since.getDate() - 365);
+  since.setDate(since.getDate() - GPS_CLUSTER_RECENCY_DAYS);
+  const quality = buildClusterQualityFilter(since);
 
   const cluster = await prisma.ipLocationEntry.findMany({
     where: {
       ipPrefix24: prefix,
-      updatedAt: { gte: since },
-      accuracyM: { lte: CROWD_CLUSTER_MAX_ACCURACY_M },
+      ...quality,
     },
-    orderBy: { accuracyM: "asc" },
-    take: 8,
+    orderBy: [{ accuracyM: "asc" }, { registerCount: "desc" }],
+    take: 12,
   });
 
   if (cluster.length === 0) {
+    const sibling = await lookupCrowdSibling(queryIp, undefined);
+    if (sibling) return sibling;
     return lookupCrowdIspCluster(queryIp, undefined);
   }
 
@@ -494,6 +552,10 @@ export async function lookupCrowdIp(ip: string): Promise<GeoLocationData | null>
       if (ispCluster) return ispCluster;
     }
     const display = await resolveClusterDisplay(one.lat, one.lon, one);
+    const accuracyM = Math.max(
+      Math.round(one.accuracyM),
+      one.source === MYLOCATION_IMPORT_SOURCE ? 400 : 0,
+    );
     return toCrowdGeoData(
       queryIp,
       {
@@ -507,14 +569,19 @@ export async function lookupCrowdIp(ip: string): Promise<GeoLocationData | null>
         roadAddress: null,
         isp: one.isp,
       },
-      `등록 DB — 동일 대역 추정 (${one.accuracyM}m)`,
+      one.source === MYLOCATION_IMPORT_SOURCE
+        ? `등록 DB — 동일 /24 대역 추정`
+        : `등록 DB — 동일 대역 추정 (${one.accuracyM}m)`,
       one.accuracyM <= 20 ? 84 : 76,
-      { exactPin: false, accuracyM: Math.round(one.accuracyM) },
+      { exactPin: false, accuracyM },
     );
   }
 
   const spread = clusterSpreadM(cluster);
-  if (spread > CROWD_CLUSTER_MAX_SPREAD_M) {
+  const spreadLimit = maxSpreadForCluster(cluster, CROWD_CLUSTER_MAX_SPREAD_M);
+  if (spread > spreadLimit) {
+    const sibling = await lookupCrowdSibling(queryIp, cluster[0]?.isp || undefined);
+    if (sibling) return sibling;
     const isp = cluster[0]?.isp || undefined;
     return lookupCrowdIspCluster(queryIp, isp);
   }
@@ -537,7 +604,7 @@ export async function lookupCrowdIp(ip: string): Promise<GeoLocationData | null>
       roadAddress: null,
       isp: best.isp,
     },
-    `등록 DB — 동일 대역 ${cluster.length}건 융합`,
+    `등록 DB — 동일 /24 ${cluster.length}건 융합`,
     spread < 200 ? 80 : 72,
     { exactPin: false, accuracyM },
   );
