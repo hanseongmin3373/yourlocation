@@ -8,6 +8,7 @@ import { formatAppliedAddress } from "@/lib/coord-validation";
 import { buildVerifiedRegistration } from "@/lib/gps-address-verify";
 import { invalidateIpLookupCache } from "@/lib/geo";
 import { resolveAddressFromCoords } from "@/lib/kakao-geocode";
+import { checkLocationRegisterRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: "접속 IP를 확인할 수 없습니다." },
         { status: 400 },
+      );
+    }
+
+    const rl = checkLocationRegisterRateLimit(clientIp);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `등록 요청이 너무 많습니다. ${rl.retryAfterSec}초 후 다시 시도해 주세요.`,
+        },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
       );
     }
 
@@ -121,7 +133,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       appliedAddress: result.appliedAddress,
-      totalCount: result.totalCount,
       isUpdate: result.isUpdate,
       address,
       dong: dong ?? "",

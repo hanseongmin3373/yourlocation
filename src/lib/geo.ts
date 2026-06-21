@@ -5,12 +5,18 @@ import {
   effectiveAccuracyM,
   ESTIMATED_IP_ACCURACY_NOTE,
   EXACT_PROVIDER_AGREEMENT_M,
+  GU_LEVEL_MAX_ACCURACY_M,
   enforceZeroErrorPolicy,
   IP2LOCATION_ALIGNED_ACCURACY_M,
   IP2LOCATION_CITY_ACCURACY_M,
   HIGH_CONFIDENCE_AGREEMENT_M,
   MAX_ALLOWED_ACCURACY_M,
 } from "./geo-accuracy";
+import {
+  applyDualAccuracyPolicy,
+  type AccuracyTier,
+} from "./geo-accuracy-policy";
+import { findIspKrCorrection } from "./isp-kr-corrections";
 import { isPrivateIp, normalizeIp } from "./client-ip";
 import {
   sanitizeDisplayAddress,
@@ -26,7 +32,8 @@ import {
 } from "./geo-fusion";
 import { resolveKoreanAddressExpert } from "./geo-kr-expert";
 import { buildPinpointNote } from "./geo-pinpoint";
-import { lookupCrowdIp, lookupCrowdIspCluster, lookupCrowdSibling } from "./crowd-ip-db";
+import { lookupCrowdIp, lookupCrowdIspCluster, lookupCrowdSibling, absorbLookupResult } from "./crowd-ip-db";
+import { tryMylocationBackfill } from "./mylocation-backfill";
 import {
   lookupFromDbIp,
   lookupFromGeojs,
@@ -58,6 +65,7 @@ const IPINFO_LOOKUP_MS = 2000;
 const KISA_WHOIS_MS = 1500;
 const DB_IP_LOOKUP_MS = 1500;
 const CROWD_LOOKUP_MS = 1400;
+const MYLOCATION_BACKFILL_MS = 5200;
 const IP_API_MS = 2200;
 
 async function withTimeout<T>(
@@ -107,12 +115,65 @@ function normalizeGuForFast(name: string): string {
   return name.replace(/\s+/g, "").replace(/(특별시|광역시|특별자치시|시|군|구)$/g, "");
 }
 
+/** crowd DB 미스 시 ISP /24 보정 (시·군·구 누락·저신뢰만) */
+function enhanceCrowdWithIspCorrection(data: GeoLocationData): GeoLocationData {
+  if (data.geoProvider !== "crowd-db" || data.exactPin || data.userVerified) {
+    return data;
+  }
+
+  const ispFix = findIspKrCorrection({
+    ip: data.ip,
+    isp: data.isp,
+    org: data.org,
+    as: data.as,
+    currentSigungu: data.sigungu || data.city,
+    currentSido: data.sido || data.region,
+  });
+  if (!ispFix?.boostTrust) return data;
+
+  const currentGu = normalizeGuForFast(data.sigungu || data.city || "");
+  const fixGu = normalizeGuForFast(ispFix.overrideSigungu);
+  if (currentGu && fixGu && currentGu !== fixGu) return data;
+
+  const sigungu = ispFix.overrideSigungu || data.sigungu;
+  const sido = ispFix.sido || data.sido;
+  const dong = ispFix.overrideDong || data.dong;
+  const policy = applyDualAccuracyPolicy({
+    baseAccuracyM: Math.min(
+      data.accuracyM ?? 520,
+      ispFix.accuracyM ?? 420,
+    ),
+    trustGeoCity: true,
+    addressAligned: Boolean(sigungu),
+    hasDong: Boolean(dong),
+    resolvedDong: dong,
+    spreadM: data.spreadM,
+    crowdDbBoost: true,
+    ispCorrectionBoost: true,
+  });
+
+  return {
+    ...data,
+    sigungu,
+    sido,
+    city: sigungu || data.city,
+    region: sido || data.region,
+    dong,
+    accuracyM: policy.displayAccuracyM,
+    accuracyTier: policy.tier,
+    accuracyNote: ispFix.note || data.accuracyNote,
+    precisionScore: Math.max(data.precisionScore ?? 70, 84),
+    confidenceLevel: policy.tier === "high" ? "high" : "medium",
+  };
+}
+
 function cacheAndReturn(ip: string, data: GeoLocationData, startedAt: number) {
   const clean = enforceZeroErrorPolicy(
     sanitizeGeoFields(data) as GeoLocationData,
   );
   ipLookupCache.set(ip, clean);
   logLookupPerf(ip, startedAt);
+  void absorbLookupResult(clean).catch(() => {});
   return clean;
 }
 
@@ -473,7 +534,19 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
         crowd.as = ipApiHint.data.as || "";
       }
     }
-    return cacheAndReturn(queryIp, crowd, startedAt);
+    return cacheAndReturn(
+      queryIp,
+      enhanceCrowdWithIspCorrection(crowd),
+      startedAt,
+    );
+  }
+
+  const backfill = await withTimeout(
+    tryMylocationBackfill(queryIp),
+    MYLOCATION_BACKFILL_MS,
+  );
+  if (backfill) {
+    return cacheAndReturn(queryIp, backfill, startedAt);
   }
 
   const cached = ipLookupCache.get(queryIp);
@@ -632,10 +705,18 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
   const meta: IpinfoPlusIntel | null = ipinfo?.meta ?? null;
 
   if (crowdSibling) {
-    return cacheAndReturn(queryIp, crowdSibling, startedAt);
+    return cacheAndReturn(
+      queryIp,
+      enhanceCrowdWithIspCorrection(crowdSibling),
+      startedAt,
+    );
   }
   if (crowdIspCluster) {
-    return cacheAndReturn(queryIp, crowdIspCluster, startedAt);
+    return cacheAndReturn(
+      queryIp,
+      enhanceCrowdWithIspCorrection(crowdIspCluster),
+      startedAt,
+    );
   }
 
   const partial = partialEarly;
@@ -653,9 +734,15 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
   let finalLon = anchorLon;
   let trustGeoCity = true;
   let krAddressAligned = false;
+  let krAddressLevel: "road" | "dong" | "district" | undefined;
   let cityHintOverridesCoords = false;
+  let accuracyTier: AccuracyTier | undefined;
+  let ispCorrectionId: string | undefined;
+  let ispCorrectionNote: string | undefined;
+  let ispCorrectionBoost = false;
+  let accuracyTierNote: string | undefined;
 
-  const uncertaintyM = fused.trustLocalBin
+  let displayAccuracyM = fused.trustLocalBin
     ? fused.accuracyM
     : effectiveAccuracyM(fused.accuracyM, fused.spreadM);
 
@@ -669,10 +756,12 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
       anchorAddress?.sigungu,
       dbIp,
     );
-    const trustedSigungu = trusted.sigungu;
+    let trustedSigungu = trusted.sigungu;
+    let ispDistrictHint = trusted.dbIpDong;
+
     trustGeoCity =
       trusted.trustGeoCity && (meta?.trustGeoCity ?? true);
-    const trustedSido =
+    let trustedSido =
       ipinfo?.point
         ? sidoFromRegionCode(meta?.regionCode) ||
           mapRegionToKorean(ipinfo.data?.region) ||
@@ -688,6 +777,37 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
               ipApi?.data?.region ||
               ipWho?.data?.region ||
               partial.region;
+
+    const ispFix = findIspKrCorrection({
+      ip: queryIp,
+      isp: partial.isp,
+      org: partial.org,
+      as: partial.as,
+      currentSigungu: trustedSigungu || anchorAddress?.sigungu,
+      currentSido: trustedSido || anchorAddress?.sido,
+    });
+    if (ispFix) {
+      ispCorrectionId = ispFix.id;
+      ispCorrectionNote = ispFix.note;
+      ispCorrectionBoost = ispFix.boostTrust;
+      trustedSigungu = ispFix.overrideSigungu;
+      trustedSido = ispFix.sido;
+      if (ispFix.overrideDong) ispDistrictHint = ispFix.overrideDong;
+      if (ispFix.boostTrust) trustGeoCity = true;
+      if (ispFix.accuracyM != null) {
+        displayAccuracyM = Math.min(displayAccuracyM, ispFix.accuracyM);
+      }
+      const center = await geocodeSigunguCenter(
+        ispFix.sido,
+        ispFix.overrideSigungu,
+      );
+      if (center) {
+        anchorLat = center.lat;
+        anchorLon = center.lon;
+        cityHintOverridesCoords = true;
+      }
+    }
+
     cityHintOverridesCoords = Boolean(
       trusted.dbIpPreferred ||
         (trustedSigungu &&
@@ -749,7 +869,7 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
       trustedSigungu,
       trustedSido: mapRegionToKorean(trustedSido) || trustedSido,
       district: sanitizeGeoText(
-        trusted.dbIpDong || ip2locDistrict || ipApiDistrict,
+        ispDistrictHint || ip2locDistrict || ipApiDistrict,
       ),
       kisaAddress: kisaWhois?.address,
       kisaOrg: kisaWhois?.orgName,
@@ -769,6 +889,7 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
     finalLat = kr.lat;
     finalLon = kr.lon;
     krAddressAligned = kr.addressAligned ?? false;
+    krAddressLevel = kr.addressLevel;
 
     if (sido) partial.region = sido;
     else if (trustedSido) partial.region = mapRegionToKorean(trustedSido) || trustedSido;
@@ -804,14 +925,47 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
   }
 
   if (isKr) {
+    const expertRefinedM =
+      krAddressLevel === "dong"
+        ? 350
+        : krAddressLevel === "road"
+          ? 320
+          : krAddressLevel === "district" && trustGeoCity
+            ? 800
+            : undefined;
+
+    const policy = applyDualAccuracyPolicy({
+      baseAccuracyM: displayAccuracyM,
+      trustGeoCity,
+      addressAligned: krAddressAligned,
+      hasDong: Boolean(dong),
+      resolvedDong: dong,
+      krAddressLevel,
+      ipinfoRadiusKm: meta?.radiusKm,
+      spreadM: fused.spreadM,
+      independentProviderCount: fused.independentProviderCount,
+      highConfidenceAgreement: fused.highConfidenceAgreement,
+      geoTrustScore: meta?.geoTrustScore,
+      isVpn: meta?.isAnonymous,
+      isHosting: meta?.isHosting,
+      isAnycast: meta?.isAnycast,
+      ispCorrectionBoost,
+      expertRefinedM,
+    });
+
+    displayAccuracyM = policy.displayAccuracyM;
+    accuracyTier = policy.tier;
+    accuracyTierNote = policy.tierNote;
+    const showDong = policy.showDong;
+
     roadAddress = undefined;
     legalAddress = undefined;
-    dong = dong && trustGeoCity ? dong : undefined;
+    dong = showDong ? dong : undefined;
     address = buildDistrictAddress({
       sido,
       sigungu,
       dong,
-      includeDong: Boolean(dong),
+      includeDong: showDong,
     });
     if (!address && sido && sigungu) {
       address = `${sido} ${sigungu}`;
@@ -820,7 +974,7 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
     }
   }
 
-  if (uncertaintyM > MAX_ALLOWED_ACCURACY_M || !trustGeoCity) {
+  if (displayAccuracyM > MAX_ALLOWED_ACCURACY_M) {
     exactPin = false;
     if (isKr) {
       roadAddress = undefined;
@@ -828,6 +982,14 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
       dong = undefined;
       address = buildDistrictAddress({ sido, sigungu, includeDong: false });
     }
+  } else if (
+    isKr &&
+    !trustGeoCity &&
+    !krAddressAligned &&
+    displayAccuracyM > GU_LEVEL_MAX_ACCURACY_M
+  ) {
+    dong = undefined;
+    address = buildDistrictAddress({ sido, sigungu, includeDong: false });
   }
 
   let precisionScore = Math.round(
@@ -836,7 +998,7 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
   if (meta?.precisionDelta) {
     precisionScore += Math.round(meta.precisionDelta * 0.5);
   }
-  precisionScore = capPrecisionForAccuracy(precisionScore, uncertaintyM);
+  precisionScore = capPrecisionForAccuracy(precisionScore, displayAccuracyM);
   if (exactPin) {
     precisionScore = Math.min(95, precisionScore + 10);
   }
@@ -892,11 +1054,17 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
         ? ` · ${meta.privacyServiceName} 감지`
         : " · VPN/프록시 — 실제 위치와 다를 수 있음";
     }
+    if (ispCorrectionNote) {
+      accuracyNote += ` · ISP 보정(${ispCorrectionId})`;
+    }
+    if (accuracyTierNote) {
+      accuracyNote += ` · ${accuracyTierNote}`;
+    }
   }
 
-  if (uncertaintyM > MAX_ALLOWED_ACCURACY_M) {
+  if (displayAccuracyM > MAX_ALLOWED_ACCURACY_M) {
     accuracyNote = `${ACCURACY_EXCEEDED_NOTE} · ${accuracyNote}`;
-  } else if (fused.trustLocalBin && uncertaintyM <= MAX_ALLOWED_ACCURACY_M) {
+  } else if (fused.trustLocalBin && displayAccuracyM <= MAX_ALLOWED_ACCURACY_M) {
     precisionScore = Math.min(88, precisionScore + 12);
   }
 
@@ -922,7 +1090,9 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
     as: partial.as || "",
     address,
     dong,
-    accuracyM: exactPin ? undefined : uncertaintyM,
+    accuracyM: exactPin ? undefined : displayAccuracyM,
+    accuracyTier,
+    ispCorrectionId,
     locationSource: exactPin ? "pinpoint" : "ip",
     accuracyNote,
     geoProvider: ipinfo?.point ? "ipinfo" : fused.providers[0],
@@ -934,6 +1104,7 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
         ...(kisaWhois ? ["kisa-whois"] : []),
         ...(dbIp ? ["db-ip"] : []),
         ...(ip2loc ? ["ip2location"] : []),
+        ...(ispCorrectionId ? ["isp-correction"] : []),
       ]),
     ],
     isVpn: meta?.isAnonymous,
@@ -962,16 +1133,20 @@ export async function lookupIp(ip: string): Promise<GeoLocationData> {
     confidenceLevel:
       meta?.isAnonymous || meta?.isHosting || meta?.isAnycast
         ? "low"
-        : uncertaintyM > MAX_ALLOWED_ACCURACY_M || fused.highDisagreement
-          ? "low"
-          : exactPin
-            ? "high"
-            : meta?.isPlus &&
-                meta.geoTrustScore >= 75 &&
-                meta.radiusKm != null &&
-                meta.radiusKm <= 50
-              ? fused.confidenceLevel
-              : fused.confidenceLevel,
+        : accuracyTier === "high"
+          ? "high"
+          : displayAccuracyM > MAX_ALLOWED_ACCURACY_M || fused.highDisagreement
+            ? "low"
+            : exactPin
+              ? "high"
+              : accuracyTier === "normal"
+                ? "medium"
+                : meta?.isPlus &&
+                    meta.geoTrustScore >= 75 &&
+                    meta.radiusKm != null &&
+                    meta.radiusKm <= 50
+                  ? fused.confidenceLevel
+                  : fused.confidenceLevel,
     roadAddress,
     legalAddress,
     sido,

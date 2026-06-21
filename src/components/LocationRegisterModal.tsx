@@ -14,7 +14,6 @@ interface LocationRegisterModalProps {
   loading?: boolean;
   error?: string | null;
   preview: GpsPreview | null;
-  totalCount?: number | null;
   /** GPS 자동 감지 생략 — 주소 검색부터 */
   addressSearchOnly?: boolean;
   onRequestLocation: () => void;
@@ -30,7 +29,6 @@ export default function LocationRegisterModal({
   loading,
   error,
   preview,
-  totalCount,
   addressSearchOnly = false,
   onRequestLocation,
   onRegister,
@@ -356,13 +354,6 @@ export default function LocationRegisterModal({
             className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
           >
             {error}
-          </p>
-        )}
-
-        {totalCount != null && (
-          <p className="mt-3 text-center text-xs font-medium text-emerald-800">
-            등록 완료! 현재 총 {totalCount.toLocaleString("ko-KR")}개의 위치
-            데이터가 수집되었습니다.
           </p>
         )}
 

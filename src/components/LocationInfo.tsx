@@ -98,6 +98,11 @@ export default function LocationInfo({
   const precise = isPreciseLocation(data);
   const lowAccuracy =
     data.accuracyM != null && data.accuracyM > MAX_ALLOWED_ACCURACY_M;
+  const isVpn =
+    data.isVpn ||
+    data.isProxy ||
+    data.isTor ||
+    Boolean(data.privacyServiceName);
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -108,17 +113,56 @@ export default function LocationInfo({
             className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
               precise
                 ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                : "border-amber-200 bg-amber-50 text-amber-900"
+                : data.resolvedVia === "gps"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-amber-200 bg-amber-50 text-amber-900"
             }`}
           >
-            {data.locationSource === "gps"
-              ? "GPS 고정"
+            {data.locationSource === "gps" || data.resolvedVia === "gps"
+              ? "GPS"
               : precise
                 ? "좌표 고정"
-                : "추정 위치"}
+                : "IP 추정"}
           </span>
         )}
       </div>
+
+      {isVpn && (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3 text-sm text-red-950"
+        >
+          <p className="font-bold">
+            VPN / 프록시 감지
+            {data.privacyServiceName ? ` — ${data.privacyServiceName}` : ""}
+          </p>
+          <p className="mt-1 text-xs text-red-800">
+            IPinfo 기준 익명 네트워크입니다. 표시 위치는 VPN 출구 또는 ISP
+            추정일 수 있으며 실제 거주지와 다를 수 있습니다.
+            {data.resolvedVia === "gps" &&
+              " 좌표는 브라우저 GPS를 우선 표시합니다."}
+          </p>
+        </div>
+      )}
+
+      {data.accuracyM != null && data.accuracyM > 0 && !precise && (
+        <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
+          <p className="font-semibold">
+            정확도 반경{" "}
+            {data.accuracyM >= 1000
+              ? `±${(data.accuracyM / 1000).toFixed(1)}km`
+              : `±${Math.round(data.accuracyM)}m`}
+            {data.accuracyTier === "high" && " (고신뢰 · 행정동급)"}
+            {data.accuracyTier === "normal" && " (시·군·구급)"}
+          </p>
+          <p className="mt-1 text-xs text-blue-800">
+            지도 파란/초록 원 안이 추정 가능 범위입니다.
+            {data.resolvedVia === "gps"
+              ? " GPS 허용 시 브라우저 좌표 기준입니다."
+              : " IPinfo·GeoIP 융합 추정입니다."}
+          </p>
+        </div>
+      )}
 
       {lowAccuracy && (
         <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">

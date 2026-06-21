@@ -1,12 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 type LocationRegisterHeroProps = {
   isRegistered: boolean;
   clientIp?: string;
   onRegister: () => void;
-  crowdStatsRefresh?: number;
   /** 좌우 분할 레이아웃용 컴팩트 배너 */
   compact?: boolean;
 };
@@ -35,20 +32,8 @@ export default function LocationRegisterHero({
   isRegistered,
   clientIp,
   onRegister,
-  crowdStatsRefresh = 0,
   compact = false,
 }: LocationRegisterHeroProps) {
-  const [crowdCount, setCrowdCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    fetch("/api/crowd-stats", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.success && typeof j.count === "number") setCrowdCount(j.count);
-      })
-      .catch(() => {});
-  }, [crowdStatsRefresh]);
-
   if (compact) {
     return (
       <div
@@ -181,13 +166,6 @@ export default function LocationRegisterHero({
             )}
           </div>
         </div>
-
-        {crowdCount != null && (
-          <p className="mt-4 text-center text-[11px] tabular-nums text-emerald-700/60 lg:text-left">
-            등록된 위치 데이터 {crowdCount.toLocaleString("ko-KR")}건 · 함께
-            모을수록 정확도가 올라갑니다
-          </p>
-        )}
       </div>
     </section>
   );

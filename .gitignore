@@ -41,6 +41,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# 민감 IP·위치 import (엑셀/CSV — Git·외부 노출 금지)
+/geo-data/import/*
+!/geo-data/import/.gitkeep
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

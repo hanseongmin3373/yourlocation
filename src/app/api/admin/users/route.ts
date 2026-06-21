@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getCrowdStats } from "@/lib/crowd-ip-db";
 
 export async function GET() {
   const admin = await requireAdmin();
@@ -25,8 +26,16 @@ export async function GET() {
       },
     });
 
+    let crowdStats = null;
+    try {
+      crowdStats = await getCrowdStats();
+    } catch (error) {
+      console.error("admin crowd stats error", error);
+    }
+
     return NextResponse.json({
       success: true,
+      crowdStats,
       users: users.map((user) => ({
         id: user.id,
         email: user.email,
@@ -104,6 +113,68 @@ export async function PATCH(request: Request) {
     console.error("admin users patch error", error);
     return NextResponse.json(
       { success: false, error: "승인 상태 변경에 실패했습니다." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  const admin = await requireAdmin();
+  if (!admin) {
+    return NextResponse.json(
+      { success: false, error: "관리자 권한이 필요합니다." },
+      { status: 403 },
+    );
+  }
+
+  try {
+    const body = (await request.json()) as { userId?: string };
+    const userId = body.userId?.trim();
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "userId가 필요합니다." },
+        { status: 400 },
+      );
+    }
+
+    if (userId === admin.id) {
+      return NextResponse.json(
+        { success: false, error: "본인 계정은 삭제할 수 없습니다." },
+        { status: 400 },
+      );
+    }
+
+    const target = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, role: true },
+    });
+
+    if (!target) {
+      return NextResponse.json(
+        { success: false, error: "회원을 찾을 수 없습니다." },
+        { status: 404 },
+      );
+    }
+
+    if (target.role === "ADMIN") {
+      return NextResponse.json(
+        { success: false, error: "관리자 계정은 삭제할 수 없습니다." },
+        { status: 400 },
+      );
+    }
+
+    await prisma.user.delete({ where: { id: userId } });
+
+    return NextResponse.json({
+      success: true,
+      deletedUserId: userId,
+      email: target.email,
+    });
+  } catch (error) {
+    console.error("admin users delete error", error);
+    return NextResponse.json(
+      { success: false, error: "회원 삭제에 실패했습니다." },
       { status: 500 },
     );
   }

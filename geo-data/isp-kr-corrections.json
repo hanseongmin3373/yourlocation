@@ -1,0 +1,766 @@
+[
+  {
+    "id": "physical-121-141-69-구로구",
+    "note": "피지컬 검증 — 서울 구로 (121.141.69.*)",
+    "match": {
+      "prefix24": "121.141.69"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "구로구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-125-240-39-구로구",
+    "note": "피지컬 검증 — 서울 구로 (125.240.39.*)",
+    "match": {
+      "prefix24": "125.240.39"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "구로구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-219-251-59-금천구",
+    "note": "피지컬 검증 — 서울 금천 (219.251.59.*)",
+    "match": {
+      "prefix24": "219.251.59"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "금천구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-211-217-87-동대문구",
+    "note": "피지컬 검증 — 서울 동대문 (211.217.87.*)",
+    "match": {
+      "prefix24": "211.217.87"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "동대문구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-175-114-66-서대문구",
+    "note": "피지컬 검증 — 서울 서부 (175.114.66.*)",
+    "match": {
+      "prefix24": "175.114.66"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "서대문구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-1-233-122-송파구",
+    "note": "피지컬 검증 — 서울 송파 (1.233.122.*)",
+    "match": {
+      "prefix24": "1.233.122"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "송파구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-221-167-227-송파구",
+    "note": "피지컬 검증 — 서울 송파 (221.167.227.*)",
+    "match": {
+      "prefix24": "221.167.227"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "송파구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-222-107-41-송파구",
+    "note": "피지컬 검증 — 서울 송파 (222.107.41.*)",
+    "match": {
+      "prefix24": "222.107.41"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "송파구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-58-29-72-강남구",
+    "note": "피지컬 검증 — 서울 수서 (58.29.72.*)",
+    "match": {
+      "prefix24": "58.29.72"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "강남구",
+      "dong": "수서동"
+    },
+    "accuracyM": 350,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-116-255-67-영등포구",
+    "note": "피지컬 검증 — 서울 영등포 (116.255.67.*)",
+    "match": {
+      "prefix24": "116.255.67"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "영등포구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-175-123-216-은평구",
+    "note": "피지컬 검증 — 서울 은평 (175.123.216.*)",
+    "match": {
+      "prefix24": "175.123.216"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "은평구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-211-235-73-중구",
+    "note": "피지컬 검증 — 서울 중부 (211.235.73.*)",
+    "match": {
+      "prefix24": "211.235.73"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "중구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-169-214-167-성남시-분당구",
+    "note": "피지컬 검증 — 성남 분당 (169.214.167.*)",
+    "match": {
+      "prefix24": "169.214.167"
+    },
+    "correct": {
+      "sido": "경기도",
+      "sigungu": "성남시 분당구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-125-178-95-안양시-동안구",
+    "note": "피지컬 검증 — 안양 동안 (125.178.95.*)",
+    "match": {
+      "prefix24": "125.178.95"
+    },
+    "correct": {
+      "sido": "경기도",
+      "sigungu": "안양시 동안구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-210-98-229-안양시-만안구",
+    "note": "피지컬 검증 — 안양 만안 (210.98.229.*)",
+    "match": {
+      "prefix24": "210.98.229"
+    },
+    "correct": {
+      "sido": "경기도",
+      "sigungu": "안양시 만안구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-115-138-84-남동구",
+    "note": "피지컬 검증 — 인천 남동 (115.138.84.*)",
+    "match": {
+      "prefix24": "115.138.84"
+    },
+    "correct": {
+      "sido": "인천광역시",
+      "sigungu": "남동구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-115-138-86-부평구",
+    "note": "피지컬 검증 — 인천 부평 (115.138.86.*)",
+    "match": {
+      "prefix24": "115.138.86"
+    },
+    "correct": {
+      "sido": "인천광역시",
+      "sigungu": "부평구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-1-11-19-순천시",
+    "note": "피지컬 검증 — 전남 순천 (1.11.19.*)",
+    "match": {
+      "prefix24": "1.11.19"
+    },
+    "correct": {
+      "sido": "전라남도",
+      "sigungu": "순천시"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-1-221-186-진도군",
+    "note": "피지컬 검증 — 전남 진도 (1.221.186.*)",
+    "match": {
+      "prefix24": "1.221.186"
+    },
+    "correct": {
+      "sido": "전라남도",
+      "sigungu": "진도군"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-112-148-16-익산시",
+    "note": "피지컬 검증 — 전북 익산 (112.148.16.*)",
+    "match": {
+      "prefix24": "112.148.16"
+    },
+    "correct": {
+      "sido": "전북특별자치도",
+      "sigungu": "익산시"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-123-212-143-천안시-서북구",
+    "note": "피지컬 검증 — 천안 서북 (123.212.143.*)",
+    "match": {
+      "prefix24": "123.212.143"
+    },
+    "correct": {
+      "sido": "충청남도",
+      "sigungu": "천안시 서북구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-182-221-6-김포시",
+    "note": "피지컬 검증 — 경기 김포 (182.221.6.*)",
+    "match": {
+      "prefix24": "182.221.6"
+    },
+    "correct": {
+      "sido": "경기도",
+      "sigungu": "김포시"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-1-242-48-시흥시",
+    "note": "피지컬 검증 — 경기 시흥 (1.242.48.*)",
+    "match": {
+      "prefix24": "1.242.48"
+    },
+    "correct": {
+      "sido": "경기도",
+      "sigungu": "시흥시"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-221-168-235-시흥시",
+    "note": "피지컬 검증 — 경기 시흥 (221.168.235.*)",
+    "match": {
+      "prefix24": "221.168.235"
+    },
+    "correct": {
+      "sido": "경기도",
+      "sigungu": "시흥시"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-125-248-161-양주시",
+    "note": "피지컬 검증 — 경기 양주 (125.248.161.*)",
+    "match": {
+      "prefix24": "125.248.161"
+    },
+    "correct": {
+      "sido": "경기도",
+      "sigungu": "양주시"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-183-99-91-여주시",
+    "note": "피지컬 검증 — 경기 여주 (183.99.91.*)",
+    "match": {
+      "prefix24": "183.99.91"
+    },
+    "correct": {
+      "sido": "경기도",
+      "sigungu": "여주시"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-58-29-190-파주시",
+    "note": "피지컬 검증 — 경기 파주 (58.29.190.*)",
+    "match": {
+      "prefix24": "58.29.190"
+    },
+    "correct": {
+      "sido": "경기도",
+      "sigungu": "파주시"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-61-43-122-파주시",
+    "note": "피지컬 검증 — 경기 파주 (61.43.122.*)",
+    "match": {
+      "prefix24": "61.43.122"
+    },
+    "correct": {
+      "sido": "경기도",
+      "sigungu": "파주시"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-58-227-186-양산시",
+    "note": "피지컬 검증 — 경남 양산 (58.227.186.*)",
+    "match": {
+      "prefix24": "58.227.186"
+    },
+    "correct": {
+      "sido": "경상남도",
+      "sigungu": "양산시"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-59-22-254-창녕군",
+    "note": "피지컬 검증 — 경남 창녕 (59.22.254.*)",
+    "match": {
+      "prefix24": "59.22.254"
+    },
+    "correct": {
+      "sido": "경상남도",
+      "sigungu": "창녕군"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-39-114-78-동구",
+    "note": "피지컬 검증 — 광주 동부 (39.114.78.*)",
+    "match": {
+      "prefix24": "39.114.78"
+    },
+    "correct": {
+      "sido": "광주광역시",
+      "sigungu": "동구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-27-113-118-달성군",
+    "note": "피지컬 검증 — 대구 달성 (27.113.118.*)",
+    "match": {
+      "prefix24": "27.113.118"
+    },
+    "correct": {
+      "sido": "대구광역시",
+      "sigungu": "달성군"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-121-182-208-북구",
+    "note": "피지컬 검증 — 대구 북부 (121.182.208.*)",
+    "match": {
+      "prefix24": "121.182.208"
+    },
+    "correct": {
+      "sido": "대구광역시",
+      "sigungu": "북구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-125-140-90-북구",
+    "note": "피지컬 검증 — 대구 북부 (125.140.90.*)",
+    "match": {
+      "prefix24": "125.140.90"
+    },
+    "correct": {
+      "sido": "대구광역시",
+      "sigungu": "북구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-180-224-34-수성구",
+    "note": "피지컬 검증 — 대구 수성 (180.224.34.*)",
+    "match": {
+      "prefix24": "180.224.34"
+    },
+    "correct": {
+      "sido": "대구광역시",
+      "sigungu": "수성구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-106-247-164-강서구",
+    "note": "피지컬 검증 — 부산 강서 (106.247.164.*)",
+    "match": {
+      "prefix24": "106.247.164"
+    },
+    "correct": {
+      "sido": "부산광역시",
+      "sigungu": "강서구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-59-16-9-부천시-소사구",
+    "note": "피지컬 검증 — 부천 소사 (59.16.9.*)",
+    "match": {
+      "prefix24": "59.16.9"
+    },
+    "correct": {
+      "sido": "경기도",
+      "sigungu": "부천시 소사구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-14-138-198-강남구",
+    "note": "피지컬 검증 — 서울 강남 (14.138.198.*)",
+    "match": {
+      "prefix24": "14.138.198"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "강남구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-115-21-6-강서구",
+    "note": "피지컬 검증 — 서울 강서 (115.21.6.*)",
+    "match": {
+      "prefix24": "115.21.6"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "강서구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-1-231-38-광진구",
+    "note": "피지컬 검증 — 서울 광진 (1.231.38.*)",
+    "match": {
+      "prefix24": "1.231.38"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "광진구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "physical-121-140-83-구로구",
+    "note": "피지컬 검증 — 서울 구로 (121.140.83.*)",
+    "match": {
+      "prefix24": "121.140.83"
+    },
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "구로구"
+    },
+    "accuracyM": 400,
+    "boostTrust": true,
+    "onlyWhenMismatch": true,
+    "source": "physical-verified"
+  },
+  {
+    "id": "kt-dongjak-118-36",
+    "note": "KT 118.36.* — 중구 오인 → 동작구",
+    "match": {
+      "prefix16": "118.36"
+    },
+    "ispKeywords": [
+      "KT",
+      "Korea Telecom"
+    ],
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "동작구",
+      "dong": "매봉동"
+    },
+    "accuracyM": 380,
+    "boostTrust": true
+  },
+  {
+    "id": "kt-banpo-211-106",
+    "note": "KT 211.106.* — 명동 오인 → 서초 반포",
+    "match": {
+      "prefix24": "211.106.118"
+    },
+    "ispKeywords": [
+      "KT"
+    ],
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "서초구",
+      "dong": "반포동"
+    },
+    "accuracyM": 360,
+    "boostTrust": true
+  },
+  {
+    "id": "busan-geumjeong-118-222",
+    "note": "부산 118.222.244.* — 금정구 장전",
+    "match": {
+      "prefix24": "118.222.244"
+    },
+    "correct": {
+      "sido": "부산광역시",
+      "sigungu": "금정구",
+      "dong": "장전동"
+    },
+    "accuracyM": 400,
+    "boostTrust": true
+  },
+  {
+    "id": "skt-mobile-175-223",
+    "note": "SKT 모바일 175.223.* — 수도권 남부",
+    "match": {
+      "prefix16": "175.223"
+    },
+    "ispKeywords": [
+      "SK Telecom",
+      "SKT",
+      "SK Broadband"
+    ],
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "강남구"
+    },
+    "accuracyM": 450,
+    "boostTrust": true
+  },
+  {
+    "id": "kt-backbone-203-248",
+    "note": "KT 203.248.* — KT 백본 수도권",
+    "match": {
+      "prefix16": "203.248"
+    },
+    "ispKeywords": [
+      "KT"
+    ],
+    "correct": {
+      "sido": "서울특별시",
+      "sigungu": "중구"
+    },
+    "accuracyM": 500,
+    "boostTrust": false
+  },
+  {
+    "id": "lgu-mobile-114-70",
+    "note": "LG U+ 114.70.* — 울산권",
+    "match": {
+      "prefix16": "114.70"
+    },
+    "ispKeywords": [
+      "LG U+",
+      "LGU+",
+      "LG Telecom"
+    ],
+    "correct": {
+      "sido": "울산광역시",
+      "sigungu": "남구"
+    },
+    "accuracyM": 420,
+    "boostTrust": true
+  },
+  {
+    "id": "uplus-gwangju-221-147",
+    "note": "LG U+ 221.147.* — 광주",
+    "match": {
+      "prefix16": "221.147"
+    },
+    "ispKeywords": [
+      "LG U+",
+      "LGU+"
+    ],
+    "correct": {
+      "sido": "광주광역시",
+      "sigungu": "서구"
+    },
+    "accuracyM": 430,
+    "boostTrust": true
+  },
+  {
+    "id": "skt-seongnam-210-89",
+    "note": "SKT 210.89.* — 성남·분당",
+    "match": {
+      "prefix16": "210.89"
+    },
+    "ispKeywords": [
+      "SK"
+    ],
+    "correct": {
+      "sido": "경기도",
+      "sigungu": "성남시 분당구"
+    },
+    "accuracyM": 440,
+    "boostTrust": true
+  },
+  {
+    "id": "uijeongbu-119-193",
+    "note": "의정부 119.193.168.*",
+    "match": {
+      "prefix24": "119.193.168"
+    },
+    "correct": {
+      "sido": "경기도",
+      "sigungu": "의정부시",
+      "dong": "의정부2동"
+    },
+    "accuracyM": 380,
+    "boostTrust": true
+  }
+]

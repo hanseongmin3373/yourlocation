@@ -17,7 +17,7 @@ export const HIGH_CONFIDENCE_AGREEMENT_M = 200;
 export const HIGH_CONFIDENCE_PROVIDER_MIN = 3;
 
 /** 주소·좌표 정합 허용 거리 (도로명 표시 기준) */
-export const ADDRESS_COORD_ALIGN_M = 250;
+export const ADDRESS_COORD_ALIGN_M = 200;
 
 /** GPS 단일 핀 허용 최대 오차 */
 export const EXACT_GPS_ACCURACY_M = 20;
@@ -34,6 +34,19 @@ export const CROWD_CLUSTER_MAX_ACCURACY_M = 30;
 export const MYLOCATION_IMPORT_MAX_ACCURACY_M = 500;
 export const MYLOCATION_IMPORT_MAX_SPREAD_M = 2000;
 
+/** lookup-absorb — 고품질 결과만 crowd DB·클러스터에 사용 */
+export const LOOKUP_ABSORB_MAX_ACCURACY_M = 450;
+export const LOOKUP_ABSORB_MAX_SPREAD_M = 800;
+
+/** 행정동 단위 표시·오차 원 상한 */
+export const DONG_LEVEL_MAX_ACCURACY_M = 550;
+
+/** 시·군·구 단위 표시 상한 */
+export const GU_LEVEL_MAX_ACCURACY_M = 1100;
+
+/** IP2Location + 역지오코딩 일치 시 허용 오차 (구·동급) */
+export const IP2LOCATION_ALIGNED_ACCURACY_M = 1200;
+
 export const ESTIMATED_IP_ACCURACY_NOTE =
   "IP 추정 (시·군·구) — 도로명·오차 없는 위치는 GPS 등록·주소 확인 또는 crowd DB 필요";
 
@@ -46,9 +59,6 @@ export const VERIFIED_ZERO_ERROR_NOTE =
 
 /** IP2Location 로컬 BIN 도시·구군급 추정 오차 */
 export const IP2LOCATION_CITY_ACCURACY_M = 3000;
-
-/** IP2Location + 역지오코딩 일치 시 허용 오차 */
-export const IP2LOCATION_ALIGNED_ACCURACY_M = 2000;
 
 export type AddressDisplayLevel = "road" | "dong" | "district";
 
@@ -64,6 +74,57 @@ export function effectiveAccuracyM(
   const a = accuracyM ?? 0;
   const s = spreadM ?? 0;
   return Math.max(a, s);
+}
+
+/** 구·동 행정단위에 맞춰 오차 반경 축소 */
+export function refineAccuracyForAdminLevel(opts: {
+  accuracyM: number;
+  hasDong: boolean;
+  trustGeoCity: boolean;
+  addressAligned?: boolean;
+  ipinfoRadiusKm?: number | null;
+  spreadM?: number | null;
+  expertRefinedM?: number | null;
+}): number {
+  let m = opts.accuracyM;
+
+  if (opts.expertRefinedM != null && opts.expertRefinedM > 0) {
+    m = Math.min(m, opts.expertRefinedM);
+  }
+
+  const radiusM =
+    opts.ipinfoRadiusKm != null && opts.ipinfoRadiusKm > 0
+      ? opts.ipinfoRadiusKm * 1000
+      : null;
+
+  if (radiusM != null) {
+    if (radiusM <= 5000) {
+      m = Math.min(m, Math.max(180, Math.round(radiusM * 0.42)));
+    } else if (radiusM <= 15000) {
+      m = Math.min(m, Math.max(320, Math.round(radiusM * 0.52)));
+    } else if (radiusM <= 50000) {
+      m = Math.min(m, Math.max(650, Math.round(radiusM * 0.32)));
+    }
+  }
+
+  const spread = opts.spreadM ?? 0;
+  if (spread > 0 && spread < 500) {
+    m = Math.min(m, Math.max(220, Math.round(spread / 2 + 100)));
+  } else if (spread > 0 && spread < 1200) {
+    m = Math.min(m, Math.max(350, Math.round(spread / 2 + 150)));
+  }
+
+  if (opts.hasDong && opts.trustGeoCity && opts.addressAligned) {
+    m = Math.min(m, DONG_LEVEL_MAX_ACCURACY_M);
+  } else if (opts.hasDong && opts.trustGeoCity) {
+    m = Math.min(m, 720);
+  } else if (opts.hasDong && opts.addressAligned) {
+    m = Math.min(m, 820);
+  } else if (opts.trustGeoCity) {
+    m = Math.min(m, GU_LEVEL_MAX_ACCURACY_M);
+  }
+
+  return Math.max(180, Math.min(m, MAX_ALLOWED_ACCURACY_M));
 }
 
 export function capPrecisionForAccuracy(
@@ -191,7 +252,50 @@ export function enforceZeroErrorPolicy(data: GeoLocationData): GeoLocationData {
     data.locationSource === "crowd" ||
     data.geoSources?.includes("crowd-db");
 
-  const defaultAccuracy = isCrowd ? 800 : IP2LOCATION_CITY_ACCURACY_M;
+  if (isCrowd) {
+    if (data.exactPin) {
+      return {
+        ...data,
+        exactPin: true,
+        accuracyM: undefined,
+        address: data.roadAddress || districtAddress || data.address,
+        accuracyNote: data.accuracyNote || VERIFIED_ZERO_ERROR_NOTE,
+        locationSource: "pinpoint",
+        confidenceLevel: "high",
+      };
+    }
+
+    const accuracyM =
+      data.accuracyM ?? (data.dong ? 420 : data.sigungu || data.city ? 520 : 680);
+    const note =
+      data.accuracyNote ??
+      (data.accuracyTier === "high"
+        ? `등록 DB — 행정동 추정 (±${Math.round(accuracyM)}m)`
+        : data.accuracyTier === "normal"
+          ? `등록 DB — 시·군·구 추정 (±${Math.round(accuracyM)}m)`
+          : "등록 DB 추정 — 동·구 단위");
+
+    return {
+      ...data,
+      exactPin: false,
+      userVerified: undefined,
+      roadAddress: undefined,
+      legalAddress: undefined,
+      address: districtAddress,
+      accuracyM,
+      accuracyNote: note,
+      locationSource: "crowd",
+      confidenceLevel:
+        data.confidenceLevel ??
+        (data.accuracyTier === "high"
+          ? "high"
+          : accuracyM <= 450
+            ? "medium"
+            : "low"),
+    };
+  }
+
+  const defaultAccuracy = IP2LOCATION_CITY_ACCURACY_M;
   const accuracyM = data.accuracyM ?? defaultAccuracy;
 
   return {
@@ -202,10 +306,8 @@ export function enforceZeroErrorPolicy(data: GeoLocationData): GeoLocationData {
     legalAddress: undefined,
     address: districtAddress,
     accuracyM,
-    accuracyNote: isCrowd
-      ? "등록 DB 추정 — 동·구 단위 (해당 IP 미확인 등록)"
-      : ESTIMATED_IP_ACCURACY_NOTE,
-    locationSource: isCrowd ? "crowd" : "ip",
+    accuracyNote: ESTIMATED_IP_ACCURACY_NOTE,
+    locationSource: "ip",
     confidenceLevel:
       accuracyM > MAX_ALLOWED_ACCURACY_M ? "low" : "medium",
   };

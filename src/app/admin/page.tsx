@@ -1,86 +1,58 @@
-"use client";
-
-import Link from "next/link";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { requireAdmin } from "@/lib/auth";
+import { getCrowdStats } from "@/lib/crowd-ip-db";
 import Header from "@/components/Header";
 import SiteFooter from "@/components/SiteFooter";
+import AdminUsersPanel from "./AdminUsersPanel";
+import Link from "next/link";
 
-interface AdminUser {
-  id: string;
-  email: string;
-  name: string | null;
-  role: "USER" | "ADMIN";
-  isApproved: boolean;
-  createdAt: string;
-  queryCount: number;
-}
+export const dynamic = "force-dynamic";
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
-}
+const SOURCE_LABELS: Record<string, string> = {
+  "admin-verified": "관리자 검증",
+  "user-verified": "사용자 검증",
+  "mylocation-import": "bulk import",
+  "gps-register": "GPS 등록",
+  "lookup-absorb": "자동 적재",
+};
 
-export default function AdminPage() {
-  const router = useRouter();
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-
-  useEffect(() => {
-    void (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch("/api/admin/users");
-        const json = await res.json();
-        if (!json.success) {
-          if (res.status === 403) {
-            router.replace("/");
-            return;
-          }
-          throw new Error(json.error);
-        }
-        setUsers(json.users);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "불러오기 실패");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [router]);
-
-  async function toggleApproval(user: AdminUser) {
-    setBusyId(user.id);
-    try {
-      const res = await fetch("/api/admin/users", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user.id,
-          isApproved: !user.isApproved,
-        }),
-      });
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error);
-
-      setUsers((prev) =>
-        prev.map((item) =>
-          item.id === user.id
-            ? { ...item, isApproved: json.user.isApproved }
-            : item,
-        ),
-      );
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "변경 실패");
-    } finally {
-      setBusyId(null);
-    }
+export default async function AdminPage() {
+  const admin = await requireAdmin();
+  if (!admin) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+        <Header />
+        <main className="mx-auto max-w-lg px-4 py-16 text-center sm:px-6">
+          <h1 className="text-xl font-bold text-slate-900">관리자 전용</h1>
+          <p className="mt-3 text-sm text-slate-600">
+            관리자 계정으로 로그인하면 IP DB 건수와 회원 승인을 확인할 수
+            있습니다.
+          </p>
+          <Link
+            href="/auth/login?next=/admin"
+            className="mt-6 inline-block rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            로그인
+          </Link>
+        </main>
+        <SiteFooter />
+      </div>
+    );
   }
 
-  const pendingCount = users.filter(
-    (user) => !user.isApproved && user.role !== "ADMIN",
-  ).length;
+  let crowdStats = {
+    count: 0,
+    todayRegistered: 0,
+    verifiedCount: 0,
+    bySource: [] as { source: string; count: number }[],
+  };
+  let statsError: string | null = null;
+
+  try {
+    crowdStats = await getCrowdStats();
+  } catch (error) {
+    console.error("admin getCrowdStats error", error);
+    statsError = "DB 통계 조회에 실패했습니다. DATABASE_URL을 확인해주세요.";
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
@@ -91,7 +63,14 @@ export default function AdminPage() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">관리자</h1>
             <p className="mt-1 text-sm text-slate-500">
-              승인된 회원만 IP 조회 무제한 · 이력 저장
+              {admin.email} · 승인된 회원 IP 조회 무제한
+            </p>
+            <p className="mt-2 text-sm font-medium text-blue-800">
+              등록 IP DB{" "}
+              <span className="text-2xl font-bold tabular-nums">
+                {crowdStats.count.toLocaleString("ko-KR")}
+              </span>
+              건
             </p>
           </div>
           <Link
@@ -102,111 +81,66 @@ export default function AdminPage() {
           </Link>
         </div>
 
-        <div className="mb-6 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs text-slate-500">전체 회원</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">
-              {users.length}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-            <p className="text-xs text-amber-700">승인 대기</p>
-            <p className="mt-1 text-2xl font-bold text-amber-900">
-              {pendingCount}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-            <p className="text-xs text-emerald-700">승인 완료</p>
-            <p className="mt-1 text-2xl font-bold text-emerald-900">
-              {users.filter((user) => user.isApproved).length}
-            </p>
-          </div>
-        </div>
-
-        {loading && (
-          <p className="text-sm text-slate-500">회원 목록을 불러오는 중...</p>
-        )}
-
-        {error && (
-          <p className="text-sm text-red-600" role="alert">
-            {error}
+        <section
+          className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+          aria-labelledby="crowd-db-stats-title"
+        >
+          <h2
+            id="crowd-db-stats-title"
+            className="text-sm font-semibold text-slate-900"
+          >
+            위치 DB (관리자 전용)
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            공개 페이지에는 표시되지 않습니다.
           </p>
-        )}
 
-        {!loading && users.length > 0 && (
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-left text-sm">
-                <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">가입일</th>
-                    <th className="px-4 py-3">이메일</th>
-                    <th className="px-4 py-3">이름</th>
-                    <th className="px-4 py-3">상태</th>
-                    <th className="px-4 py-3">조회 수</th>
-                    <th className="px-4 py-3">관리</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {users.map((user) => (
-                    <tr key={user.id} className="hover:bg-slate-50/80">
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                        {formatDate(user.createdAt)}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-800">
-                        {user.email}
-                        {user.role === "ADMIN" && (
-                          <span className="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-700">
-                            관리자
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {user.name || "-"}
-                      </td>
-                      <td className="px-4 py-3">
-                        {user.isApproved ? (
-                          <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-800">
-                            승인됨
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
-                            대기
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {user.queryCount}
-                      </td>
-                      <td className="px-4 py-3">
-                        {user.role === "ADMIN" ? (
-                          <span className="text-xs text-slate-400">-</span>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={busyId === user.id}
-                            onClick={() => toggleApproval(user)}
-                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
-                              user.isApproved
-                                ? "border border-slate-200 text-slate-600 hover:bg-slate-50"
-                                : "bg-blue-600 text-white hover:bg-blue-700"
-                            }`}
-                          >
-                            {busyId === user.id
-                              ? "처리 중..."
-                              : user.isApproved
-                                ? "승인 해제"
-                                : "승인"}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
+          {statsError ? (
+            <p className="mt-4 text-sm text-red-600" role="alert">
+              {statsError}
+            </p>
+          ) : (
+            <>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+                  <p className="text-xs text-blue-700">등록 IP 총건</p>
+                  <p className="mt-1 text-3xl font-bold tabular-nums text-blue-950">
+                    {crowdStats.count.toLocaleString("ko-KR")}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4">
+                  <p className="text-xs text-violet-700">주소 확인(verified)</p>
+                  <p className="mt-1 text-3xl font-bold tabular-nums text-violet-950">
+                    {crowdStats.verifiedCount.toLocaleString("ko-KR")}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-teal-100 bg-teal-50/60 p-4">
+                  <p className="text-xs text-teal-700">오늘 갱신</p>
+                  <p className="mt-1 text-3xl font-bold tabular-nums text-teal-950">
+                    {crowdStats.todayRegistered.toLocaleString("ko-KR")}
+                  </p>
+                </div>
+              </div>
+              {crowdStats.bySource.length > 0 && (
+                <ul className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600">
+                  {crowdStats.bySource.map((row) => (
+                    <li
+                      key={row.source}
+                      className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 tabular-nums"
+                    >
+                      {SOURCE_LABELS[row.source] ?? row.source}{" "}
+                      <span className="font-semibold text-slate-800">
+                        {row.count.toLocaleString("ko-KR")}
+                      </span>
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+                </ul>
+              )}
+            </>
+          )}
+        </section>
+
+        <AdminUsersPanel initialCount={crowdStats.count} />
       </main>
 
       <SiteFooter />

@@ -3,10 +3,14 @@ import {
   buildDistrictAddress,
   CROWD_CLUSTER_MAX_ACCURACY_M,
   CROWD_CLUSTER_MAX_SPREAD_M,
+  MAX_ALLOWED_ACCURACY_M,
   MYLOCATION_IMPORT_MAX_ACCURACY_M,
   MYLOCATION_IMPORT_MAX_SPREAD_M,
+  LOOKUP_ABSORB_MAX_ACCURACY_M,
+  LOOKUP_ABSORB_MAX_SPREAD_M,
   VERIFIED_ZERO_ERROR_NOTE,
 } from "./geo-accuracy";
+import { applyDualAccuracyPolicy } from "./geo-accuracy-policy";
 import { haversineMeters } from "./geo-fusion";
 import { resolveAddressFromCoords } from "./kakao-geocode";
 import { prisma } from "./db";
@@ -15,6 +19,14 @@ import type { Prisma } from "@prisma/client";
 
 const GPS_CLUSTER_RECENCY_DAYS = 365;
 const MYLOCATION_IMPORT_SOURCE = "mylocation-import";
+export const LOOKUP_ABSORB_SOURCE = "lookup-absorb";
+const ADMIN_VERIFIED_SOURCE = "admin-verified";
+
+const IMPORT_LIKE_SOURCES = new Set([
+  MYLOCATION_IMPORT_SOURCE,
+  LOOKUP_ABSORB_SOURCE,
+  ADMIN_VERIFIED_SOURCE,
+]);
 
 export type CrowdRegisterInput = {
   ip: string;
@@ -41,6 +53,8 @@ export type CrowdRegisterResult = {
 export type CrowdStats = {
   count: number;
   todayRegistered: number;
+  verifiedCount: number;
+  bySource: { source: string; count: number }[];
 };
 
 function ipv4Prefix24(ip: string): string | null {
@@ -102,12 +116,18 @@ function clusterSpreadM(entries: { lat: number; lon: number }[]): number {
   return max;
 }
 
-/** GPS 자발 등록(최근·고정밀) + mylocation-import(연령 무관) 클러스터 조건 */
+/** GPS 자발 등록(최근·고정밀) + bulk import·검증 데이터 클러스터 조건 */
 function buildClusterQualityFilter(since: Date): Prisma.IpLocationEntryWhereInput {
   return {
     OR: [
       {
-        source: { not: MYLOCATION_IMPORT_SOURCE },
+        source: {
+          notIn: [
+            MYLOCATION_IMPORT_SOURCE,
+            LOOKUP_ABSORB_SOURCE,
+            ADMIN_VERIFIED_SOURCE,
+          ],
+        },
         updatedAt: { gte: since },
         accuracyM: { lte: CROWD_CLUSTER_MAX_ACCURACY_M },
       },
@@ -115,7 +135,98 @@ function buildClusterQualityFilter(since: Date): Prisma.IpLocationEntryWhereInpu
         source: MYLOCATION_IMPORT_SOURCE,
         accuracyM: { lte: MYLOCATION_IMPORT_MAX_ACCURACY_M },
       },
+      {
+        source: ADMIN_VERIFIED_SOURCE,
+        accuracyM: { lte: MYLOCATION_IMPORT_MAX_ACCURACY_M },
+      },
+      {
+        source: LOOKUP_ABSORB_SOURCE,
+        accuracyM: { lte: LOOKUP_ABSORB_MAX_ACCURACY_M },
+      },
     ],
+  };
+}
+
+function isTrustedImportSource(source?: string | null): boolean {
+  return source != null && IMPORT_LIKE_SOURCES.has(source);
+}
+
+function normalizeSigunguKey(name?: string | null): string {
+  return String(name ?? "")
+    .replace(/\s+/g, "")
+    .replace(/(특별시|광역시|특별자치시|시|군|구)$/g, "");
+}
+
+/** bulk import /24 — 동일 시·군·구 합의 시 spread 완화 */
+function clusterAdminConsensus(
+  entries: {
+    sigungu?: string | null;
+    sido?: string | null;
+    source?: string;
+  }[],
+): { sigungu: string; sido: string | null } | null {
+  if (entries.length < 2) return null;
+  if (!entries.every((e) => isTrustedImportSource(e.source))) return null;
+
+  const keys = entries
+    .map((e) => normalizeSigunguKey(e.sigungu))
+    .filter(Boolean);
+  if (keys.length < Math.ceil(entries.length * 0.85)) return null;
+  if (new Set(keys).size !== 1) return null;
+
+  const sigungu = entries.find((e) => e.sigungu)?.sigungu;
+  if (!sigungu) return null;
+  return { sigungu, sido: entries.find((e) => e.sido)?.sido ?? null };
+}
+
+function refineCrowdPolicy(opts: {
+  baseAccuracyM: number;
+  hasDong: boolean;
+  resolvedDong?: string | null;
+  sigungu?: string | null;
+  sido?: string | null;
+  spreadM?: number;
+  trustedImport: boolean;
+  userVerified?: boolean;
+}) {
+  if (opts.userVerified) {
+    return {
+      displayAccuracyM: undefined as number | undefined,
+      tier: "high" as const,
+      tierNote: VERIFIED_ZERO_ERROR_NOTE,
+      showDong: Boolean(opts.resolvedDong),
+      precisionScore: 95,
+    };
+  }
+
+  const policy = applyDualAccuracyPolicy({
+    baseAccuracyM: opts.baseAccuracyM,
+    trustGeoCity: true,
+    addressAligned: Boolean(opts.sigungu && (opts.sido || opts.sigungu)),
+    hasDong: opts.hasDong,
+    resolvedDong: opts.resolvedDong,
+    spreadM: opts.spreadM,
+    crowdDbBoost: opts.trustedImport,
+    ispCorrectionBoost: opts.trustedImport && Boolean(opts.sigungu),
+  });
+
+  const precisionScore =
+    policy.tier === "high"
+      ? opts.trustedImport
+        ? 90
+        : 84
+      : policy.tier === "normal"
+        ? opts.trustedImport
+          ? 82
+          : 76
+        : 68;
+
+  return {
+    displayAccuracyM: policy.displayAccuracyM,
+    tier: policy.tier,
+    tierNote: policy.tierNote,
+    showDong: policy.showDong,
+    precisionScore,
   };
 }
 
@@ -123,7 +234,9 @@ function maxSpreadForCluster(
   entries: { source?: string }[],
   gpsSpreadLimit: number,
 ): number {
-  const hasImport = entries.some((e) => e.source === MYLOCATION_IMPORT_SOURCE);
+  const hasImport = entries.some((e) =>
+    e.source ? IMPORT_LIKE_SOURCES.has(e.source) : false,
+  );
   return hasImport ? MYLOCATION_IMPORT_MAX_SPREAD_M : gpsSpreadLimit;
 }
 
@@ -151,7 +264,12 @@ function toCrowdGeoData(
   },
   note: string,
   precisionScore: number,
-  opts: { exactPin: boolean; accuracyM?: number },
+  opts: {
+    exactPin: boolean;
+    accuracyM?: number;
+    accuracyTier?: "high" | "normal" | "low";
+    spreadM?: number;
+  },
 ): GeoLocationData {
   const displayAddress =
     opts.exactPin && entry.userVerified
@@ -183,16 +301,23 @@ function toCrowdGeoData(
     roadAddress:
       opts.exactPin && entry.userVerified ? entry.roadAddress || undefined : undefined,
     accuracyM: opts.exactPin ? undefined : opts.accuracyM,
+    accuracyTier: opts.accuracyTier,
     locationSource: opts.exactPin ? "pinpoint" : "crowd",
     accuracyNote: note,
     geoProvider: "crowd-db",
     geoSources: ["crowd-db"],
     precisionScore,
-    confidenceLevel: opts.exactPin ? "high" : "medium",
+    confidenceLevel:
+      opts.exactPin || opts.accuracyTier === "high"
+        ? "high"
+        : opts.accuracyTier === "normal"
+          ? "medium"
+          : "medium",
     addressSource: entry.userVerified ? "user-verified" : "crowd-register",
     expertMode: true,
     exactPin: opts.exactPin,
     userVerified: entry.userVerified || undefined,
+    spreadM: opts.spreadM,
   };
 }
 
@@ -382,15 +507,34 @@ export async function lookupCrowdIspCluster(
 
   const { lat, lon } = weightedMedianCoords(cluster);
   const best = cluster[0];
-  const accuracyM = Math.max(Math.round(spread / 2), Math.round(best.accuracyM));
+  const importLike = cluster.some((e) => isTrustedImportSource(e.source));
+  const baseAccuracyM = Math.max(
+    Math.round(spread / 2),
+    Math.round(best.accuracyM),
+    importLike ? 300 : 360,
+  );
   const display = await resolveClusterDisplay(lat, lon, best);
+  const policy = refineCrowdPolicy({
+    baseAccuracyM,
+    hasDong: Boolean(display.dong),
+    resolvedDong: display.dong,
+    sigungu: display.sigungu,
+    sido: display.sido,
+    spreadM: spread,
+    trustedImport: importLike,
+  });
 
   return toCrowdGeoData(
     normalizeIp(ip),
     {
       lat,
       lon,
-      address: display.address,
+      address: buildDistrictAddress({
+        sido: display.sido,
+        sigungu: display.sigungu,
+        dong: display.dong,
+        includeDong: policy.showDong && Boolean(display.dong),
+      }) || display.address,
       appliedAddress: display.address,
       dong: display.dong || null,
       sido: display.sido || null,
@@ -399,8 +543,13 @@ export async function lookupCrowdIspCluster(
       isp: best.isp,
     },
     `등록 DB — 동일 ISP /16 ${cluster.length}건 (가중 중앙값)`,
-    cluster.length >= 3 ? 78 : 72,
-    { exactPin: false, accuracyM },
+    policy.precisionScore,
+    {
+      exactPin: false,
+      accuracyM: policy.displayAccuracyM,
+      accuracyTier: policy.tier,
+      spreadM: spread,
+    },
   );
 }
 
@@ -447,18 +596,34 @@ export async function lookupCrowdSibling(
 
   const { lat, lon } = weightedMedianCoords(siblings);
   const best = siblings[0];
-  const accuracyM = Math.max(
+  const importLike = siblings.some((e) => isTrustedImportSource(e.source));
+  const baseAccuracyM = Math.max(
     Math.round(spread / 2),
     Math.round(best.accuracyM),
+    importLike ? 300 : 360,
   );
   const display = await resolveClusterDisplay(lat, lon, best);
+  const policy = refineCrowdPolicy({
+    baseAccuracyM,
+    hasDong: Boolean(display.dong),
+    resolvedDong: display.dong,
+    sigungu: display.sigungu,
+    sido: display.sido,
+    spreadM: spread,
+    trustedImport: importLike,
+  });
 
   return toCrowdGeoData(
     normalizeIp(ip),
     {
       lat,
       lon,
-      address: display.address,
+      address: buildDistrictAddress({
+        sido: display.sido,
+        sigungu: display.sigungu,
+        dong: display.dong,
+        includeDong: policy.showDong && Boolean(display.dong),
+      }) || display.address,
       appliedAddress: display.address,
       dong: display.dong || null,
       sido: display.sido || null,
@@ -467,8 +632,13 @@ export async function lookupCrowdSibling(
       isp: best.isp,
     },
     `등록 DB — 인접 대역 ${siblings.length}건 (ISP ${best.isp || "동일"})`,
-    siblings.length >= 2 ? 82 : 76,
-    { exactPin: false, accuracyM },
+    policy.precisionScore,
+    {
+      exactPin: false,
+      accuracyM: policy.displayAccuracyM,
+      accuracyTier: policy.tier,
+      spreadM: spread,
+    },
   );
 }
 
@@ -482,6 +652,13 @@ export async function lookupCrowdIpExact(
   });
   if (!exact) return null;
 
+  if (
+    exact.source === LOOKUP_ABSORB_SOURCE &&
+    (exact.accuracyM > LOOKUP_ABSORB_MAX_ACCURACY_M || !exact.sigungu)
+  ) {
+    return null;
+  }
+
   void prisma.ipLocationEntry
     .update({
       where: { id: exact.id },
@@ -490,29 +667,49 @@ export async function lookupCrowdIpExact(
     .catch(() => {});
 
   const exactPin = Boolean(exact.userVerified);
+  const trustedImport =
+    isTrustedImportSource(exact.source) && Boolean(exact.sigungu);
 
-  const districtAddress =
-    buildDistrictAddress({
-      sido: exact.sido || undefined,
-      sigungu: exact.sigungu || undefined,
-      dong: exact.dong || undefined,
-      includeDong: Boolean(exact.dong),
-    }) || exact.appliedAddress;
+  const baseAccuracyM = trustedImport
+    ? Math.min(Math.round(exact.accuracyM), exact.dong ? 320 : 380)
+    : Math.max(Math.round(exact.accuracyM), exact.dong ? 300 : 380);
+
+  const policy = refineCrowdPolicy({
+    baseAccuracyM,
+    hasDong: Boolean(exact.dong),
+    resolvedDong: exact.dong,
+    sigungu: exact.sigungu,
+    sido: exact.sido,
+    trustedImport,
+    userVerified: exactPin,
+  });
+
+  const districtAddress = buildDistrictAddress({
+    sido: exact.sido || undefined,
+    sigungu: exact.sigungu || undefined,
+    dong: exact.dong || undefined,
+    includeDong: policy.showDong && Boolean(exact.dong),
+  }) || exact.appliedAddress;
 
   const entryForDisplay = exact.userVerified
     ? exact
     : { ...exact, address: districtAddress };
 
+  const note = exactPin
+    ? VERIFIED_ZERO_ERROR_NOTE
+    : trustedImport && exact.sigungu
+      ? `등록 DB — ${exact.sigungu}${policy.showDong && exact.dong ? ` ${exact.dong}` : ""}`
+      : policy.tierNote;
+
   return toCrowdGeoData(
     queryIp,
     entryForDisplay,
-    exact.userVerified
-      ? VERIFIED_ZERO_ERROR_NOTE
-      : `등록 DB — 주소 미확인 (시·군·구 추정)`,
-    exact.userVerified ? 95 : 72,
+    note,
+    policy.precisionScore,
     {
       exactPin,
-      accuracyM: exact.userVerified ? undefined : Math.max(Math.round(exact.accuracyM), 500),
+      accuracyM: policy.displayAccuracyM,
+      accuracyTier: policy.tier,
     },
   );
 }
@@ -551,17 +748,31 @@ export async function lookupCrowdIp(ip: string): Promise<GeoLocationData | null>
       const ispCluster = await lookupCrowdIspCluster(queryIp, one.isp);
       if (ispCluster) return ispCluster;
     }
+    const importLike = isTrustedImportSource(one.source);
     const display = await resolveClusterDisplay(one.lat, one.lon, one);
-    const accuracyM = Math.max(
+    const baseAccuracyM = Math.max(
       Math.round(one.accuracyM),
-      one.source === MYLOCATION_IMPORT_SOURCE ? 400 : 0,
+      importLike ? (display.dong ? 260 : 320) : 340,
     );
+    const policy = refineCrowdPolicy({
+      baseAccuracyM,
+      hasDong: Boolean(display.dong),
+      resolvedDong: display.dong,
+      sigungu: display.sigungu,
+      sido: display.sido,
+      trustedImport: importLike,
+    });
     return toCrowdGeoData(
       queryIp,
       {
         lat: one.lat,
         lon: one.lon,
-        address: display.address,
+        address: buildDistrictAddress({
+          sido: display.sido,
+          sigungu: display.sigungu,
+          dong: display.dong,
+          includeDong: policy.showDong && Boolean(display.dong),
+        }) || display.address,
         appliedAddress: display.address,
         dong: display.dong || null,
         sido: display.sido || null,
@@ -569,17 +780,22 @@ export async function lookupCrowdIp(ip: string): Promise<GeoLocationData | null>
         roadAddress: null,
         isp: one.isp,
       },
-      one.source === MYLOCATION_IMPORT_SOURCE
-        ? `등록 DB — 동일 /24 대역 추정`
-        : `등록 DB — 동일 대역 추정 (${one.accuracyM}m)`,
-      one.accuracyM <= 20 ? 84 : 76,
-      { exactPin: false, accuracyM },
+      importLike
+        ? `등록 DB — 동일 /24 (${display.sigungu || "대역"})`
+        : policy.tierNote,
+      policy.precisionScore,
+      {
+        exactPin: false,
+        accuracyM: policy.displayAccuracyM,
+        accuracyTier: policy.tier,
+      },
     );
   }
 
   const spread = clusterSpreadM(cluster);
   const spreadLimit = maxSpreadForCluster(cluster, CROWD_CLUSTER_MAX_SPREAD_M);
-  if (spread > spreadLimit) {
+  const adminConsensus = clusterAdminConsensus(cluster);
+  if (spread > spreadLimit && !adminConsensus) {
     const sibling = await lookupCrowdSibling(queryIp, cluster[0]?.isp || undefined);
     if (sibling) return sibling;
     const isp = cluster[0]?.isp || undefined;
@@ -588,15 +804,39 @@ export async function lookupCrowdIp(ip: string): Promise<GeoLocationData | null>
 
   const { lat, lon } = weightedMedianCoords(cluster);
   const best = cluster[0];
-  const accuracyM = Math.max(Math.round(spread / 2), Math.round(best.accuracyM));
-  const display = await resolveClusterDisplay(lat, lon, best);
+  const importLike = cluster.some((e) => isTrustedImportSource(e.source));
+  const baseAccuracyM = Math.max(
+    Math.round(spread / 2),
+    Math.round(best.accuracyM),
+    importLike ? 280 : 340,
+  );
+  const display = await resolveClusterDisplay(lat, lon, {
+    ...best,
+    ...(adminConsensus
+      ? { sigungu: adminConsensus.sigungu, sido: adminConsensus.sido }
+      : {}),
+  });
+  const policy = refineCrowdPolicy({
+    baseAccuracyM,
+    hasDong: Boolean(display.dong),
+    resolvedDong: display.dong,
+    sigungu: display.sigungu,
+    sido: display.sido,
+    spreadM: spread,
+    trustedImport: importLike || Boolean(adminConsensus),
+  });
 
   return toCrowdGeoData(
     queryIp,
     {
       lat,
       lon,
-      address: display.address,
+      address: buildDistrictAddress({
+        sido: display.sido,
+        sigungu: display.sigungu,
+        dong: display.dong,
+        includeDong: policy.showDong && Boolean(display.dong),
+      }) || display.address,
       appliedAddress: display.address,
       dong: display.dong || null,
       sido: display.sido || null,
@@ -604,9 +844,16 @@ export async function lookupCrowdIp(ip: string): Promise<GeoLocationData | null>
       roadAddress: null,
       isp: best.isp,
     },
-    `등록 DB — 동일 /24 ${cluster.length}건 융합`,
-    spread < 200 ? 80 : 72,
-    { exactPin: false, accuracyM },
+    adminConsensus
+      ? `등록 DB — /24 ${cluster.length}건 · ${adminConsensus.sigungu} 합의`
+      : `등록 DB — 동일 /24 ${cluster.length}건 융합`,
+    policy.precisionScore,
+    {
+      exactPin: false,
+      accuracyM: policy.displayAccuracyM,
+      accuracyTier: policy.tier,
+      spreadM: spread,
+    },
   );
 }
 
@@ -626,12 +873,214 @@ export async function getCrowdStats(): Promise<CrowdStats> {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  const [count, todayRegistered] = await Promise.all([
+  const [count, todayRegistered, verifiedCount, grouped] = await Promise.all([
     prisma.ipLocationEntry.count(),
     prisma.ipLocationEntry.count({
       where: { updatedAt: { gte: startOfDay } },
     }),
+    prisma.ipLocationEntry.count({
+      where: { userVerified: true },
+    }),
+    prisma.ipLocationEntry.groupBy({
+      by: ["source"],
+      _count: { _all: true },
+    }),
   ]);
 
-  return { count, todayRegistered };
+  return {
+    count,
+    todayRegistered,
+    verifiedCount,
+    bySource: grouped
+      .map((g) => ({
+        source: g.source,
+        count: g._count._all,
+      }))
+      .sort((a, b) => b.count - a.count),
+  };
+}
+
+const PROTECTED_SOURCES = new Set([
+  "user-verified",
+  "admin-verified",
+  "gps-register",
+]);
+
+function lookupAbsorbAccuracyM(data: GeoLocationData): number {
+  let m: number;
+  if (data.accuracyM != null && data.accuracyM > 0) {
+    m = Math.min(Math.round(data.accuracyM), MAX_ALLOWED_ACCURACY_M);
+  } else if (data.ipinfoRadiusKm != null && data.ipinfoRadiusKm > 0) {
+    m = Math.min(Math.round(data.ipinfoRadiusKm * 520), 900);
+  } else if (data.precisionScore != null && data.precisionScore >= 80) {
+    m = 360;
+  } else if (data.precisionScore != null && data.precisionScore >= 65) {
+    m = 620;
+  } else if (data.exactPin) {
+    m = 420;
+  } else {
+    m = 900;
+  }
+
+  const policy = applyDualAccuracyPolicy({
+    baseAccuracyM: m,
+    trustGeoCity: (data.geoTrustScore ?? 0) >= 55,
+    addressAligned: Boolean(data.dong && data.sido && data.sigungu),
+    hasDong: Boolean(data.dong),
+    resolvedDong: data.dong,
+    ipinfoRadiusKm: data.ipinfoRadiusKm,
+    ispCorrectionBoost: Boolean(data.ispCorrectionId),
+  });
+
+  return policy.displayAccuracyM;
+}
+
+export function isLookupAbsorbEnabled(): boolean {
+  const v = process.env.LOOKUP_ABSORB?.trim().toLowerCase();
+  if (v === "1" || v === "true" || v === "on") return true;
+  return false;
+}
+
+/** 저품질 GeoIP 결과 crowd DB 오염 방지 */
+function shouldAbsorbLookup(data: GeoLocationData): boolean {
+  if (data.resolvedVia === "gps" || data.locationSource === "gps") return false;
+  if (data.geoProvider === "crowd-db" || data.locationSource === "crowd") {
+    return false;
+  }
+  if (data.isVpn || data.isHosting || data.isAnycast) return false;
+  if (!data.sigungu && !data.city) return false;
+
+  const score = data.precisionScore ?? 0;
+  const trust = data.geoTrustScore ?? 0;
+  const tier = data.accuracyTier;
+
+  if (data.userVerified) return true;
+  if (data.ispCorrectionId) return true;
+  if (tier === "high") return true;
+  if (score >= 78 && trust >= 58) return true;
+  if (data.geoProvider === "crowd-db") return false;
+
+  return score >= 72 && Boolean(data.dong) && (data.accuracyM ?? 9999) <= 450;
+}
+
+/** GeoIP·융합 조회 결과 → crowd DB 적재 (등록 DB miss 시 자동 흡수) */
+export async function absorbLookupResult(data: GeoLocationData): Promise<void> {
+  if (!isLookupAbsorbEnabled()) return;
+  if (!shouldAbsorbLookup(data)) return;
+
+  if (data.geoProvider === "crowd-db" || data.locationSource === "crowd") {
+    return;
+  }
+
+  const ip = normalizeIp(data.ip);
+  const prefix = ipv4Prefix24(ip);
+  if (!prefix) return;
+
+  if (
+    !Number.isFinite(data.lat) ||
+    !Number.isFinite(data.lon) ||
+    (data.lat === 0 && data.lon === 0)
+  ) {
+    return;
+  }
+
+  const accuracyM = lookupAbsorbAccuracyM(data);
+  if (accuracyM > MAX_ALLOWED_ACCURACY_M) return;
+
+  const address =
+    data.roadAddress || data.address || data.legalAddress || "";
+  if (!address.trim()) return;
+
+  const appliedAddress =
+    buildDistrictAddress({
+      sido: data.sido || data.region || undefined,
+      sigungu: data.sigungu || data.city || undefined,
+      dong: data.dong || undefined,
+      includeDong: Boolean(data.dong),
+    }) || address;
+
+  const existing = await prisma.ipLocationEntry.findUnique({ where: { ip } });
+
+  if (existing?.userVerified) {
+    void prisma.ipLocationEntry
+      .update({
+        where: { id: existing.id },
+        data: { lookupCount: { increment: 1 } },
+      })
+      .catch(() => {});
+    return;
+  }
+
+  if (
+    existing &&
+    PROTECTED_SOURCES.has(existing.source) &&
+    existing.accuracyM + 50 < accuracyM
+  ) {
+    void prisma.ipLocationEntry
+      .update({
+        where: { id: existing.id },
+        data: { lookupCount: { increment: 1 } },
+      })
+      .catch(() => {});
+    return;
+  }
+
+  if (
+    existing &&
+    existing.source === MYLOCATION_IMPORT_SOURCE &&
+    existing.accuracyM + 80 < accuracyM
+  ) {
+    void prisma.ipLocationEntry
+      .update({
+        where: { id: existing.id },
+        data: { lookupCount: { increment: 1 } },
+      })
+      .catch(() => {});
+    return;
+  }
+
+  const geoMeta = [data.geoProvider, ...(data.geoSources || [])]
+    .filter(Boolean)
+    .join("+");
+
+  await prisma.ipLocationEntry.upsert({
+    where: { ip },
+    create: {
+      ip,
+      ipPrefix24: prefix,
+      lat: data.lat,
+      lon: data.lon,
+      accuracyM,
+      address,
+      appliedAddress,
+      dong: data.dong || null,
+      sido: data.sido || data.region || null,
+      sigungu: data.sigungu || data.city || null,
+      roadAddress: data.roadAddress || null,
+      isp: data.isp || null,
+      source: LOOKUP_ABSORB_SOURCE,
+      userVerified: false,
+      registerCount: 1,
+      lookupCount: 1,
+    },
+    update: {
+      lat: data.lat,
+      lon: data.lon,
+      accuracyM,
+      address,
+      appliedAddress,
+      dong: data.dong || null,
+      sido: data.sido || data.region || null,
+      sigungu: data.sigungu || data.city || null,
+      roadAddress: data.roadAddress || null,
+      isp: data.isp || existing?.isp || null,
+      source: LOOKUP_ABSORB_SOURCE,
+      lookupCount: { increment: 1 },
+      registerCount: { increment: 1 },
+    },
+  });
+
+  if (process.env.LOOKUP_ABSORB_LOG === "1") {
+    console.log(`[lookup-absorb] ${ip} ${accuracyM}m ${geoMeta} → ${appliedAddress}`);
+  }
 }

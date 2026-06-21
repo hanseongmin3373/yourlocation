@@ -13,7 +13,15 @@
     "db:studio": "prisma studio",
     "geo:update-db": "node scripts/setup-ip2location.mjs",
     "police:update-db": "node scripts/setup-police-db.mjs",
-    "mylocation:import": "node scripts/import-mylocation.mjs"
+    "mylocation:import": "node scripts/import-mylocation.mjs",
+    "mylocation:backfill": "tsx scripts/backfill-mylocation.mjs",
+    "lookup:absorb-log": "tsx scripts/absorb-query-log.mjs",
+    "crowd:purge-absorb": "node scripts/purge-low-quality-absorb.mjs",
+    "crowd:import-ground-truth": "node scripts/import-ground-truth.mjs",
+    "isp:generate-corrections": "node scripts/generate-isp-corrections.mjs --write",
+    "import:parse-folders": "node scripts/parse-ip-folder-names.mjs",
+    "import:parsed-folders": "node scripts/import-parsed-folders.mjs",
+    "accuracy:measure": "tsx scripts/measure-accuracy.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.9.0",
@@ -37,6 +45,7 @@
     "postcss": "^8.5.4",
     "prisma": "^6.9.0",
     "tailwindcss": "^4.1.8",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "xlsx": "^0.18.5"
   }
 }

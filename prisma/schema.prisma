@@ -77,3 +77,13 @@ model IpLocationEntry {
   @@index([isp])
   @@index([updatedAt(sort: Desc)])
 }
+
+/// mylocation.co.kr 조회 시도 기록 (MSSQL 없을 때 live backfill용)
+model MylocationProbe {
+  ip       String   @id
+  hit      Boolean
+  address  String?
+  probedAt DateTime @default(now())
+
+  @@index([probedAt(sort: Desc)])
+}

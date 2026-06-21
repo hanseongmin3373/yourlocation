@@ -230,7 +230,7 @@ export function parseIpinfoPlus(raw: IpinfoPlusRaw): IpinfoPlusIntel | null {
     !raw.is_hosting &&
     !raw.is_anycast &&
     !raw.is_satellite &&
-    (radiusKm == null || radiusKm <= 100);
+    (radiusKm == null || radiusKm <= 50);
 
   const allowRoadHint =
     geoTrustScore >= 80 &&
@@ -338,7 +338,9 @@ export function buildPlusAccuracyNotes(intel: IpinfoPlusIntel): string {
 
 /** ipinfo 앵커와 보조 제공자 합의 허용 거리(m) — radius 기반 */
 export function plusAgreementRadiusM(intel?: IpinfoPlusIntel | null): number {
-  if (!intel?.radiusKm) return 8000;
+  if (!intel?.radiusKm) return 6000;
   const rM = intel.radiusKm * 1000;
-  return Math.min(Math.max(rM * 0.35, 3000), 25000);
+  if (rM <= 5000) return Math.max(700, Math.round(rM * 0.38));
+  if (rM <= 15000) return Math.min(Math.max(rM * 0.26, 1400), 5500);
+  return Math.min(Math.max(rM * 0.32, 2800), 18000);
 }

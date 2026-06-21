@@ -100,10 +100,26 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 
 export async function requireAdmin() {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") {
-    return null;
+  if (!user) return null;
+
+  if (user.role === "ADMIN") return user;
+
+  const normalized = user.email.trim().toLowerCase();
+  if (getAdminEmails().includes(normalized)) {
+    await applyAdminBootstrap(user.id, user.email);
+    return prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isApproved: true,
+      },
+    });
   }
-  return user;
+
+  return null;
 }
 
 export async function applyAdminBootstrap(userId: string, email: string) {

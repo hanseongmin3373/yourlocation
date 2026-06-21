@@ -16,6 +16,14 @@ export interface GeoLocationData {
   dong?: string;
   /** 추정 오차 반경(미터). IP 조회 시 표시 */
   accuracyM?: number;
+  /** 클러스터 내 좌표 분산(미터) — 정책·표시용 */
+  spreadM?: number;
+  /** 고신뢰(high) / 일반(normal) / 저신뢰(low) */
+  accuracyTier?: "high" | "normal" | "low";
+  /** ISP·대역 보정 테이블 ID (적용 시) */
+  ispCorrectionId?: string;
+  /** gps | ip — 클라이언트 해석 경로 */
+  resolvedVia?: "gps" | "ip";
   locationSource?: "ip" | "gps" | "crowd" | "pinpoint";
   accuracyNote?: string;
   /** true — 지도에 오차 원 없이 단일 좌표 표시 */

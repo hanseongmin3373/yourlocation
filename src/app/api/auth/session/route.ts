@@ -1,12 +1,25 @@
 import { NextResponse } from "next/server";
 import { getSessionUser, isUnlimitedUser } from "@/lib/auth";
-import { getAnonymousRemaining } from "@/lib/query-access";
+import { getAnonymousRemaining, isPublicQueryUnlimited } from "@/lib/query-access";
 import { getClientIp } from "@/lib/client-ip";
 
 export async function GET(request: Request) {
   try {
     const user = await getSessionUser();
     const ip = getClientIp(request.headers);
+
+    if (isPublicQueryUnlimited()) {
+      return NextResponse.json({
+        success: true,
+        user,
+        remaining: null,
+        isMember: Boolean(user && isUnlimitedUser(user)),
+        isPendingMember: false,
+        isAdmin: user?.role === "ADMIN",
+        unlimited: true,
+      });
+    }
+
     const unlimited = user ? isUnlimitedUser(user) : false;
     const remaining = unlimited ? null : await getAnonymousRemaining(ip);
 

@@ -389,33 +389,51 @@ export function fuseCoordinates(
     : fusionPool.length > 1
       ? maxPairwiseSpread(fusionPool)
       : spreadM;
-  const spreadBasedM = Math.round(activeSpreadM / 2 + 400);
-  let accuracyM = Math.max(spreadBasedM, valid.length === 1 ? 1800 : 1200);
+  const spreadBasedM = Math.round(activeSpreadM / 2 + 220);
+  let accuracyM = Math.max(spreadBasedM, valid.length === 1 ? 1100 : 850);
 
   if (ipinfoRadiusM != null && ipinfoRadiusM > 0) {
-    accuracyM = Math.min(
-      Math.max(accuracyM, Math.round(ipinfoRadiusM * 0.85)),
-      Math.round(ipinfoRadiusM * 1.15),
-    );
+    if (ipinfoRadiusM <= 5000) {
+      accuracyM = Math.min(
+        accuracyM,
+        Math.max(180, Math.round(ipinfoRadiusM * 0.48)),
+      );
+    } else if (ipinfoRadiusM <= 15000) {
+      accuracyM = Math.min(
+        Math.max(accuracyM, Math.round(ipinfoRadiusM * 0.45)),
+        Math.round(ipinfoRadiusM * 0.72),
+      );
+    } else {
+      accuracyM = Math.min(
+        Math.max(accuracyM, Math.round(ipinfoRadiusM * 0.7)),
+        Math.round(ipinfoRadiusM * 1.05),
+      );
+    }
   }
 
   if (hasStrongAgreement) {
     accuracyM = Math.min(
       accuracyM,
-      Math.max(400, Math.round(agreement.spreadM / 2 + 200)),
+      Math.max(220, Math.round(agreement.spreadM / 2 + 100)),
     );
   } else if (activeSpreadM < 1500) {
-    accuracyM = Math.min(accuracyM, Math.max(600, Math.round(activeSpreadM / 2 + 300)));
+    accuracyM = Math.min(accuracyM, Math.max(380, Math.round(activeSpreadM / 2 + 160)));
   } else if (activeSpreadM < 4000) {
-    accuracyM = Math.min(accuracyM, Math.round(activeSpreadM / 2 + 500));
+    accuracyM = Math.min(accuracyM, Math.round(activeSpreadM / 2 + 380));
   }
 
   accuracyM = Math.max(accuracyM, Math.round(activeSpreadM / 2));
   if (maxProviderRadiusM > 0) {
-    accuracyM = Math.max(accuracyM, Math.round(maxProviderRadiusM * 0.9));
+    if (maxProviderRadiusM <= 8000) {
+      accuracyM = Math.min(accuracyM, Math.round(maxProviderRadiusM * 0.52));
+    } else {
+      accuracyM = Math.max(accuracyM, Math.round(maxProviderRadiusM * 0.82));
+    }
   }
   if (isKr && independentProviderCount <= 1 && !trustLocalBin) {
-    accuracyM = Math.max(accuracyM, 3500);
+    const plusTight =
+      ipinfoRadiusM != null && ipinfoRadiusM > 0 && ipinfoRadiusM <= 15000;
+    accuracyM = Math.max(accuracyM, plusTight ? 850 : 2000);
   }
 
   let precisionScore = hasStrongAgreement ? 80 : 68;

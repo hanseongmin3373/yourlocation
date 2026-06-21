@@ -2,15 +2,25 @@ import { prisma } from "@/lib/db";
 import { isUnlimitedUser, type SessionUser } from "@/lib/auth";
 import { createMemoryCache } from "@/lib/memory-cache";
 
+/** 레거시 — PUBLIC_QUERY_UNLIMITED=0 일 때만 적용 */
 export const ANON_DAILY_LIMIT = 100;
 
 const remainingCache = createMemoryCache<number>(15_000, 500);
+
+/** 기본 true — 회원가입·승인 없이 무제한 조회 */
+export function isPublicQueryUnlimited(): boolean {
+  const v = process.env.PUBLIC_QUERY_UNLIMITED?.trim().toLowerCase();
+  if (v === "0" || v === "false" || v === "off") return false;
+  return true;
+}
 
 function getKstDateString(date = new Date()) {
   return date.toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
 }
 
 export async function getAnonymousRemaining(ip: string) {
+  if (isPublicQueryUnlimited()) return null;
+
   const cached = remainingCache.get(ip);
   if (cached !== undefined) return cached;
 
@@ -28,6 +38,15 @@ export async function assertQueryAllowed(
   user: SessionUser | null,
   ip: string,
 ) {
+  if (isPublicQueryUnlimited()) {
+    return {
+      allowed: true,
+      isMember: Boolean(user && isUnlimitedUser(user)),
+      isPendingMember: false,
+      remaining: null as number | null,
+    };
+  }
+
   if (user && isUnlimitedUser(user)) {
     return {
       allowed: true,
@@ -38,7 +57,7 @@ export async function assertQueryAllowed(
   }
 
   const remaining = await getAnonymousRemaining(ip);
-  if (remaining <= 0) {
+  if (remaining != null && remaining <= 0) {
     const error = user
       ? `승인 대기 중입니다. 관리자 승인 후 무제한 조회가 가능합니다. (비승인 회원·비회원 하루 ${ANON_DAILY_LIMIT}회)`
       : `비회원은 하루 ${ANON_DAILY_LIMIT}회까지 조회할 수 있습니다. 회원가입 후 관리자 승인을 받으면 무제한 이용할 수 있습니다.`;
@@ -69,7 +88,21 @@ interface RecordQueryInput {
 }
 
 export async function recordQuery(input: RecordQueryInput) {
-  const { user, ip, queryType, queryValue, resultAddress } = input;
+  const { user, queryType, queryValue, resultAddress } = input;
+
+  if (isPublicQueryUnlimited()) {
+    if (user && isUnlimitedUser(user)) {
+      await prisma.queryLog.create({
+        data: {
+          userId: user.id,
+          queryType,
+          queryValue,
+          resultAddress: resultAddress ?? null,
+        },
+      });
+    }
+    return { remaining: null as number | null };
+  }
 
   if (user && isUnlimitedUser(user)) {
     await prisma.queryLog.create({
@@ -83,6 +116,7 @@ export async function recordQuery(input: RecordQueryInput) {
     return { remaining: null as number | null };
   }
 
+  const { ip } = input;
   const date = getKstDateString();
   const usage = await prisma.anonymousUsage.upsert({
     where: { ip_date: { ip, date } },

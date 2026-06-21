@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { normalizeIp } from "@/lib/client-ip";
 import { assertQueryAllowed, recordQuery } from "@/lib/query-access";
+import {
+  checkDistinctIpLookupBurst,
+  checkGeoLookupRateLimit,
+} from "@/lib/rate-limit";
 import { getClientIp, isValidIp, lookupIp } from "@/lib/geo";
 import type { GeoApiResponse } from "@/lib/types";
 
@@ -27,6 +31,32 @@ export async function GET(request: NextRequest) {
 
   try {
     const clientIp = getClientIp(request.headers);
+    const rl = checkGeoLookupRateLimit(clientIp);
+    if (!rl.allowed) {
+      return NextResponse.json<GeoApiResponse>(
+        {
+          success: false,
+          error: `요청이 너무 많습니다. ${rl.retryAfterSec}초 후 다시 시도해 주세요.`,
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rl.retryAfterSec) },
+        },
+      );
+    }
+
+    const burst = checkDistinctIpLookupBurst(clientIp, normalizeIp(trimmedIp));
+    if (!burst.allowed) {
+      return NextResponse.json<GeoApiResponse>(
+        {
+          success: false,
+          error:
+            "짧은 시간에 너무 많은 IP를 조회했습니다. 잠시 후 다시 시도해 주세요.",
+        },
+        { status: 429, headers: { "Retry-After": "60" } },
+      );
+    }
+
     const user = await getSessionUser();
     const [access, data] = await Promise.all([
       assertQueryAllowed(user, clientIp),

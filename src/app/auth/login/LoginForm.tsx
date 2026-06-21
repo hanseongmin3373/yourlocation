@@ -36,7 +36,7 @@ export default function LoginForm() {
         throw new Error(json.error || "로그인에 실패했습니다.");
       }
 
-      router.push("/my");
+      router.push(searchParams.get("next") || "/my");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "로그인에 실패했습니다.");

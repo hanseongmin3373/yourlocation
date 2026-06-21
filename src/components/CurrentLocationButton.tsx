@@ -29,7 +29,7 @@ export default function CurrentLocationButton({
           clipRule="evenodd"
         />
       </svg>
-      {loading ? "위치 확인 중..." : "현재 위치 확인"}
+      {loading ? "GPS·IP 확인 중..." : "GPS 다시 확인"}
     </button>
   );
 }

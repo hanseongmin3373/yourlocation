@@ -14,6 +14,10 @@ interface KakaoMapProps {
   mapLevel?: number;
   /** 미터 단위 오차 원 (최대 5km) */
   accuracyRadiusM?: number;
+  /** 지도 오차 원 라벨 */
+  accuracyLabel?: string;
+  /** gps | ip — 원 색상 */
+  circleVariant?: "gps" | "ip";
   exactPin?: boolean;
 }
 function loadKakaoMapScript(appKey: string): Promise<void> {
@@ -53,6 +57,8 @@ export default function KakaoMap({
   fullBleed = false,
   mapLevel = 3,
   accuracyRadiusM,
+  accuracyLabel,
+  circleVariant = "ip",
   exactPin = true,
 }: KakaoMapProps) {
   const resolvedHeight = fillContainer ? "h-full min-h-0" : heightClass;
@@ -125,19 +131,33 @@ export default function KakaoMap({
     overlaysRef.current.push(ipMarker);
 
     if (!exactPin && accuracyRadiusM && accuracyRadiusM > 0) {
+      const isGps = circleVariant === "gps";
+      const strokeColor = isGps ? "#059669" : "#2563eb";
+      const fillColor = isGps ? "#10b981" : "#3b82f6";
       const circle = new kakao.maps.Circle({
         center,
         radius: accuracyRadiusM,
         strokeWeight: 2,
-        strokeColor: "#2563eb",
-        strokeOpacity: 0.75,
+        strokeColor,
+        strokeOpacity: 0.85,
         strokeStyle: "solid",
-        fillColor: "#3b82f6",
-        fillOpacity: 0.22,
+        fillColor,
+        fillOpacity: isGps ? 0.18 : 0.22,
         zIndex: 1,
       });
       circle.setMap(map);
       overlaysRef.current.push(circle);
+
+      if (accuracyLabel) {
+        const labelOverlay = new kakao.maps.CustomOverlay({
+          position: center,
+          content: `<div style="padding:4px 8px;background:rgba(255,255,255,.95);border-radius:6px;font-size:11px;font-weight:700;box-shadow:0 1px 6px rgba(0,0,0,.12);white-space:nowrap;border:1px solid ${isGps ? "#6ee7b7" : "#93c5fd"};color:${isGps ? "#065f46" : "#1e40af"};">${accuracyLabel}</div>`,
+          yAnchor: -0.5,
+          zIndex: 4,
+        });
+        labelOverlay.setMap(map);
+        overlaysRef.current.push(labelOverlay);
+      }
     }
 
     if (label && exactPin) {
@@ -226,7 +246,7 @@ export default function KakaoMap({
       overlaysRef.current.forEach((overlay) => overlay.setMap(null));
       overlaysRef.current = [];
     };
-  }, [ready, position, label, policeStation, mapLevel, accuracyRadiusM, exactPin, fillContainer]);
+  }, [ready, position, label, policeStation, mapLevel, accuracyRadiusM, accuracyLabel, circleVariant, exactPin, fillContainer]);
   if (error) {
     const isMissingKey = error.includes("설정되지 않았습니다");
     return (

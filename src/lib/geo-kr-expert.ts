@@ -462,7 +462,7 @@ export async function resolveKoreanAddressExpert(
     legalAddress =
       anchorDetail.legal !== address ? anchorDetail.legal : undefined;
     dong = resolvedDong || undefined;
-  } else if (addressAligned && resolvedDong && guMatch) {
+  } else if (guMatch && resolvedDong && (addressAligned || trustGeoCity || district)) {
     addressLevel = "dong";
     address = buildDistrictAddress({
       sido: resolvedSido,
@@ -477,12 +477,10 @@ export async function resolveKoreanAddressExpert(
       sido: resolvedSido,
       sigungu: resolvedSigungu,
       dong: resolvedDong,
-      includeDong: false,
+      includeDong: Boolean(guMatch && resolvedDong && trustGeoCity),
     });
     dong =
-      addressLevel === "district" && guMatch && resolvedDong
-        ? resolvedDong
-        : undefined;
+      guMatch && resolvedDong && trustGeoCity ? resolvedDong : undefined;
   }
 
   if (!guMatch || !trustGeoCity) {
@@ -518,6 +516,17 @@ export async function resolveKoreanAddressExpert(
       ? "coord2address"
       : best.source;
 
+  const refinedAccuracyM =
+    addressLevel === "dong"
+      ? 520
+      : addressLevel === "district"
+        ? guMatch && trustGeoCity
+          ? 900
+          : 1100
+        : allowRoadAddress && addressAligned
+          ? 380
+          : undefined;
+
   return {
     address,
     roadAddress,
@@ -530,7 +539,7 @@ export async function resolveKoreanAddressExpert(
     addressSource,
     precisionScore: Math.max(40, Math.min(78, best.score)),
     dongUncertain: addressLevel === "district",
-    refinedAccuracyM: allowRoadAddress && addressAligned ? 0 : undefined,
+    refinedAccuracyM,
     exactPin: false,
     addressAligned,
     addressLevel,

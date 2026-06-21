@@ -12,6 +12,7 @@ import LocationRegisterModal from "@/components/LocationRegisterModal";
 import SiteFooter from "@/components/SiteFooter";
 import UtilityLinks from "@/components/UtilityLinks";
 import UsageBanner from "@/components/UsageBanner";
+import LocationStatusBar from "@/components/LocationStatusBar";
 import {
   isOwnIpQuery,
   previewGpsLocation,
@@ -19,6 +20,11 @@ import {
   type GpsPreview,
 } from "@/lib/client-location";
 import { resolveVisitorIp } from "@/lib/detect-client-ip";
+import {
+  resolveIpLocation,
+  resolveGpsOverlay,
+  type LocationResolvedVia,
+} from "@/lib/resolve-best-location";
 import {
   displayAccuracyRadiusM,
   enforceZeroErrorPolicy,
@@ -60,11 +66,9 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
   const [registerLoading, setRegisterLoading] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [gpsPreview, setGpsPreview] = useState<GpsPreview | null>(null);
-  const [crowdStatsRefresh, setCrowdStatsRefresh] = useState(0);
-  const [registerTotalCount, setRegisterTotalCount] = useState<number | null>(
-    null,
-  );
   const [addressSearchOnly, setAddressSearchOnly] = useState(false);
+  const [resolvedVia, setResolvedVia] = useState<LocationResolvedVia | undefined>();
+  const [gpsFailed, setGpsFailed] = useState(false);
   const autoGpsRequested = useRef(false);
   const skipAutoGps = useRef(false);
 
@@ -104,6 +108,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
     (data: GeoLocationData, remaining?: number | null) => {
       const normalized = enforceZeroErrorPolicy(data);
       setLocationData(normalized);
+      setResolvedVia(normalized.resolvedVia);
       setMapPosition({ lat: normalized.lat, lng: normalized.lon });
       void fetchPoliceStation(normalized.lat, normalized.lon, {
         sido: normalized.sido,
@@ -117,6 +122,45 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
       }
     },
     [fetchPoliceStation],
+  );
+
+  const loadIpLocation = useCallback(
+    async (ip: string, title?: string) => {
+      setGeoLoading(true);
+      setError(null);
+      try {
+        const result = await resolveIpLocation(ip);
+        applyLocation(result.data, result.remaining);
+        setResolvedVia("ip");
+        setGpsFailed(false);
+        setInfoTitle(title ?? "IP 위치 (ipinfo · crowd DB)");
+        return result.data;
+      } finally {
+        setGeoLoading(false);
+      }
+    },
+    [applyLocation],
+  );
+
+  const loadGpsOverlay = useCallback(
+    async (ip: string) => {
+      setGeoLoading(true);
+      setError(null);
+      try {
+        const result = await resolveGpsOverlay(ip);
+        applyLocation(result.data, result.remaining);
+        setResolvedVia("gps");
+        setGpsFailed(false);
+        setInfoTitle("기기 GPS (IP 위치와 다를 수 있음 · ipinfo VPN)");
+        return result.data;
+      } catch (err) {
+        setGpsFailed(true);
+        throw err;
+      } finally {
+        setGeoLoading(false);
+      }
+    },
+    [applyLocation],
   );
 
   const fetchRemoteIp = useCallback(
@@ -137,12 +181,6 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
 
   const handleSearch = useCallback(
     async (query: string, type: SearchQueryType) => {
-      if (!isLocationRegistered) {
-        setRegisterModalOpen(true);
-        setRegisterError("검색 기능은 위치 등록 후 이용할 수 있습니다.");
-        return;
-      }
-
       setLoading(true);
       setError(null);
 
@@ -177,11 +215,11 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
 
         if (clientIp && isOwnIpQuery(query, clientIp)) {
           setInfoTitle("내 IP 위치");
-          const data = await fetchRemoteIp(query);
+          const data = await loadIpLocation(query);
           setInfoTitle(
             data.userVerified
               ? "내 IP 위치 (확인됨 · 오차 없음)"
-              : "내 IP 위치 (동·구 추정)",
+              : "내 IP 위치 (ipinfo · crowd DB)",
           );
           return;
         }
@@ -223,7 +261,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
         setLoading(false);
       }
     },
-    [applyLocation, clientIp, fetchRemoteIp, isLocationRegistered],
+    [applyLocation, clientIp, fetchRemoteIp, loadIpLocation],
   );
 
   const handleRequestLocation = useCallback(async () => {
@@ -272,8 +310,6 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
         setAddressSearchOnly(false);
         setRegisterModalOpen(false);
         setGpsPreview(null);
-        setRegisterTotalCount(result.totalCount ?? null);
-        setCrowdStatsRefresh((n) => n + 1);
         sessionStorage.removeItem(REGISTER_DISMISS_KEY);
         sessionStorage.setItem(DB_REFRESH_KEY, "1");
         setInfoTitle("내 IP 위치 (확인됨 · 오차 없음)");
@@ -310,7 +346,6 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
       sessionStorage.removeItem(DB_REFRESH_KEY);
       setIsLocationRegistered(false);
       setRegisterModalOpen(true);
-      setCrowdStatsRefresh((n) => n + 1);
     } catch {
       setError("등록 데이터 삭제에 실패했습니다.");
     }
@@ -326,9 +361,9 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
   }, []);
 
   const handleCurrentLocation = useCallback(() => {
-    openRegisterModal();
-    void handleRequestLocation();
-  }, [openRegisterModal, handleRequestLocation]);
+    if (!clientIp) return;
+    void loadGpsOverlay(clientIp);
+  }, [clientIp, loadGpsOverlay]);
 
   useEffect(() => {
     const registered = getLocationConsent() === "registered";
@@ -382,39 +417,29 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
           sessionStorage.getItem(REGISTER_DISMISS_KEY) === "1";
 
         if (!registered && !dismissed) {
-          setInfoTitle("GPS 위치 등록");
-          setLoading(false);
-          return;
-        }
-
-        if (!registered && dismissed) {
-          setInfoTitle("GPS 위치 등록 필요");
-          setLoading(false);
-          return;
+          setRegisterModalOpen(true);
         }
 
         setLoading(true);
         setError(null);
-        setInfoTitle("내 IP 위치");
+        setInfoTitle("위치 확인 중…");
 
         try {
-          const data = await fetchRemoteIp(ip);
-          if (!cancelled) {
-            if (data.userVerified) {
-              markLocationRegistered();
-              setIsLocationRegistered(true);
-              setInfoTitle("내 IP 위치 (확인됨 · 오차 없음)");
-            } else if (registered) {
-              clearLocationConsent();
-              setIsLocationRegistered(false);
-              skipAutoGps.current = true;
-              autoGpsRequested.current = false;
-              setAddressSearchOnly(true);
-              setRegisterModalOpen(true);
-              setRegisterError(
-                "저장된 주소 확인이 필요합니다. 아래에서 실제 도로명·지번을 검색해 등록해 주세요.",
-              );
-            }
+          const data = await loadIpLocation(ip);
+          if (!cancelled && data.userVerified) {
+            markLocationRegistered();
+            setIsLocationRegistered(true);
+            setInfoTitle("내 IP 위치 (확인됨 · 오차 없음)");
+          } else if (!cancelled && registered && !data.userVerified) {
+            clearLocationConsent();
+            setIsLocationRegistered(false);
+            skipAutoGps.current = true;
+            autoGpsRequested.current = false;
+            setAddressSearchOnly(true);
+            setRegisterModalOpen(true);
+            setRegisterError(
+              "저장된 주소 확인이 필요합니다. 아래에서 실제 도로명·지번을 검색해 등록해 주세요.",
+            );
           }
         } catch (err) {
           if (!cancelled) {
@@ -437,7 +462,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
     return () => {
       cancelled = true;
     };
-  }, [applyLocation, fetchRemoteIp, initialIp]);
+  }, [loadIpLocation, initialIp]);
 
   const isPrecise = Boolean(locationData && isPreciseLocation(locationData));
   const accuracyExceeded =
@@ -446,6 +471,16 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
   const mapAccuracyRadius = displayAccuracyRadiusM(
     isPrecise ? undefined : locationData?.accuracyM,
   );
+  const mapAccuracyLabel =
+    mapAccuracyRadius != null
+      ? mapAccuracyRadius >= 1000
+        ? `±${(mapAccuracyRadius / 1000).toFixed(1)}km`
+        : `±${Math.round(mapAccuracyRadius)}m`
+      : undefined;
+  const mapCircleVariant: "gps" | "ip" =
+    resolvedVia === "gps" || locationData?.resolvedVia === "gps"
+      ? "gps"
+      : "ip";
 
   const locationSummary = locationData
     ? isPrecise
@@ -463,7 +498,6 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
         loading={registerLoading}
         error={registerError}
         preview={gpsPreview}
-        totalCount={registerTotalCount}
         addressSearchOnly={addressSearchOnly}
         onRequestLocation={() => void handleRequestLocation()}
         onRegister={(preview) => void handleRegisterLocation(preview)}
@@ -480,8 +514,6 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
                 clientIp={clientIp}
                 onSearch={(q, type) => void handleSearch(q, type)}
                 loading={loading}
-                disabled={!isLocationRegistered}
-                disabledMessage="위치 등록 후 IP·주소 검색이 가능합니다."
               />
             </div>
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
@@ -496,7 +528,12 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
               />
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <LocationStatusBar
+              data={locationData}
+              resolvedVia={resolvedVia}
+              gpsFailed={gpsFailed}
+            />
             <UtilityLinks ip={clientIp} />
             <UsageBanner />
             {clientIp && <IpBanner ip={clientIp} />}
@@ -562,8 +599,10 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
               position={mapPosition}
               label={isPrecise ? locationData?.address : undefined}
               policeStation={policeStation}
-              mapLevel={isPrecise ? 2 : 6}
+              mapLevel={isPrecise ? 2 : resolvedVia === "gps" ? 4 : 6}
               accuracyRadiusM={mapAccuracyRadius}
+              accuracyLabel={mapAccuracyLabel}
+              circleVariant={mapCircleVariant}
               exactPin={isPrecise}
               fillContainer
               fullBleed
@@ -580,7 +619,6 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
               )}
               clientIp={clientIp}
               onRegister={openRegisterModal}
-              crowdStatsRefresh={crowdStatsRefresh}
             />
           ) : null}
           <div className="app-split-info-scroll p-3 sm:p-4">
@@ -594,7 +632,6 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
             <div className="mt-4 border-t border-slate-200 pt-4">
               <SiteFooter
                 onEraseData={() => void handleEraseRegistration()}
-                crowdStatsRefresh={crowdStatsRefresh}
               />
             </div>
           </div>
