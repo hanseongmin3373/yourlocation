@@ -31,6 +31,15 @@ export default function SiteFooter({ onEraseData }: SiteFooterProps) {
         )}
       </div>
       <p>© {new Date().getFullYear()} yourlocation.co.kr · IP 위치 조회 서비스</p>
+      <p className="mt-2">
+        관리자 문의:{" "}
+        <a
+          href="mailto:yourlocation.co.kr@gmail.com"
+          className="hover:text-slate-600"
+        >
+          yourlocation.co.kr@gmail.com
+        </a>
+      </p>
     </footer>
   );
 }

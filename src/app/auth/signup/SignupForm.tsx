@@ -203,6 +203,15 @@ export default function SignupForm() {
         <Link href="/legal/privacy" className="hover:text-slate-600">
           개인정보 처리방침
         </Link>
+        <p className="mt-2">
+          관리자 문의:{" "}
+          <a
+            href="mailto:yourlocation.co.kr@gmail.com"
+            className="hover:text-slate-600"
+          >
+            yourlocation.co.kr@gmail.com
+          </a>
+        </p>
       </footer>
     </div>
   );
