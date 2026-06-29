@@ -73,8 +73,10 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
   const [gpsFailed, setGpsFailed] = useState(false);
   const autoGpsRequested = useRef(false);
   const skipAutoGps = useRef(false);
+  const showPoliceRef = useRef(false);
 
   const resetPolice = useCallback(() => {
+    showPoliceRef.current = false;
     setShowPolice(false);
     setPoliceStation(null);
     setPoliceLoading(false);
@@ -86,6 +88,8 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
       lng: number,
       opts?: { sido?: string; sigungu?: string; dong?: string },
     ) => {
+      if (!showPoliceRef.current) return;
+
       setPoliceLoading(true);
       setPoliceStation(null);
 
@@ -102,11 +106,15 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
           `/api/nearest-police-station?${params.toString()}`,
         );
         const json = await res.json();
+        if (!showPoliceRef.current) return;
         setPoliceStation(json.success ? json.data : null);
       } catch {
+        if (!showPoliceRef.current) return;
         setPoliceStation(null);
       } finally {
-        setPoliceLoading(false);
+        if (showPoliceRef.current) {
+          setPoliceLoading(false);
+        }
       }
     },
     [],
@@ -130,19 +138,18 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
 
   const togglePoliceDisplay = useCallback(() => {
     if (showPolice) {
-      setShowPolice(false);
-      setPoliceStation(null);
-      setPoliceLoading(false);
+      resetPolice();
       return;
     }
     if (!locationData) return;
+    showPoliceRef.current = true;
     setShowPolice(true);
     void fetchPoliceStation(locationData.lat, locationData.lon, {
       sido: locationData.sido,
       sigungu: locationData.sigungu,
       dong: locationData.dong,
     });
-  }, [showPolice, locationData, fetchPoliceStation]);
+  }, [showPolice, locationData, fetchPoliceStation, resetPolice]);
 
   const loadIpLocation = useCallback(
     async (ip: string, title?: string) => {
