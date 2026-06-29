@@ -6,7 +6,8 @@ import type { MapPosition, PoliceStationInfo } from "@/lib/types";
 interface KakaoMapProps {
   position: MapPosition | null;
   label?: string;
-  /** showPolice가 true일 때만 전달 — 경찰서 핀·라벨·점선 */
+  /** true일 때만 경찰서 핀·라벨·점선 표시 */
+  showPolice?: boolean;
   policeStation?: PoliceStationInfo | null;
   heightClass?: string;
   /** 부모 flex/grid 셀 높이에 맞춤 */
@@ -52,6 +53,7 @@ type MapOverlay = { setMap: (map: unknown | null) => void };
 export default function KakaoMap({
   position,
   label,
+  showPolice = false,
   policeStation,
   heightClass = "h-[50vh] min-h-[280px]",
   fillContainer = false,
@@ -177,6 +179,7 @@ export default function KakaoMap({
     bounds.extend(center);
 
     const policeHasCoords =
+      showPolice &&
       policeStation != null &&
       Number.isFinite(policeStation.lat) &&
       Number.isFinite(policeStation.lng);
@@ -248,7 +251,7 @@ export default function KakaoMap({
       overlaysRef.current.forEach((overlay) => overlay.setMap(null));
       overlaysRef.current = [];
     };
-  }, [ready, position, label, policeStation, mapLevel, accuracyRadiusM, accuracyLabel, circleVariant, exactPin, fillContainer]);
+  }, [ready, position, label, showPolice, policeStation, mapLevel, accuracyRadiusM, accuracyLabel, circleVariant, exactPin, fillContainer]);
   if (error) {
     const isMissingKey = error.includes("설정되지 않았습니다");
     return (

@@ -131,6 +131,8 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
   const togglePoliceDisplay = useCallback(() => {
     if (showPolice) {
       setShowPolice(false);
+      setPoliceStation(null);
+      setPoliceLoading(false);
       return;
     }
     if (!locationData) return;
@@ -630,6 +632,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
             <KakaoMap
               position={mapPosition}
               label={mapPinLabel}
+              showPolice={showPolice}
               policeStation={showPolice ? policeStation : null}
               mapLevel={isPrecise ? 2 : resolvedVia === "gps" ? 4 : 6}
               accuracyRadiusM={mapAccuracyRadius}
@@ -659,8 +662,8 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
               loading={loading || geoLoading}
               title={infoTitle}
               showPolice={showPolice}
-              policeStation={policeStation}
-              policeLoading={policeLoading}
+              policeStation={showPolice ? policeStation : null}
+              policeLoading={showPolice ? policeLoading : false}
             />
             <div className="mt-4 border-t border-slate-200 pt-4">
               <SiteFooter
