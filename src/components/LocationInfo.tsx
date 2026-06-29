@@ -9,6 +9,7 @@ interface LocationInfoProps {
   data: GeoLocationData | null;
   loading?: boolean;
   title?: string;
+  showPolice?: boolean;
   policeStation?: PoliceStationInfo | null;
   policeLoading?: boolean;
 }
@@ -68,8 +69,9 @@ export default function LocationInfo({
   data,
   loading,
   title = "위치 정보",
+  showPolice = false,
   policeStation,
-  policeLoading,
+  policeLoading = false,
 }: LocationInfoProps) {
   if (loading) {
     return (
@@ -325,40 +327,43 @@ export default function LocationInfo({
           </p>
         )}
 
-      <div className="mt-5 border-t border-slate-100 pt-4">
-        <h3 className="mb-3 text-sm font-bold text-slate-900">
-          관할 경찰관서 (경찰청 [별표2] · 구 관할)
-        </h3>
-        {policeLoading ? (
-          <div className="space-y-2">
-            <div className="h-5 animate-pulse rounded bg-slate-100" />
-            <div className="h-5 w-2/3 animate-pulse rounded bg-slate-100" />
-          </div>
-        ) : policeStation ? (
-          <dl className="space-y-3">
-            <InfoRow label="경찰서" value={policeStation.name} />
-            <InfoRow label="주소" value={policeStation.address} />
-            <InfoRow label="전화" value={policeStation.phone} />
-            <InfoRow
-              label="거리"
-              value={
-                policeStation.distanceM >= 1000
-                  ? `${(policeStation.distanceM / 1000).toFixed(1)} km`
-                  : `${policeStation.distanceM} m`
-              }
-            />
-          </dl>
-        ) : (
-          <p className="text-sm text-slate-500">
-            해당 위치 근처 경찰서 정보를 찾을 수 없습니다.
-          </p>
-        )}
-        <p className="mt-3 text-xs text-slate-400">
-          {precise
-            ? "표시 좌표는 카카오 주소·GPS 기준 단일 핀입니다."
-            : "IP 추정 위치입니다. GPS 등록 시 동일 IP에 대해 오차 없이 표시됩니다."}
-        </p>
-      </div>
+      {showPolice ? (
+        <div className="mt-5 border-t border-slate-100 pt-4">
+          <h3 className="mb-3 text-sm font-bold text-slate-900">
+            관할 경찰관서 (경찰청 [별표2] · 구 관할)
+          </h3>
+          {policeLoading ? (
+            <div className="space-y-2">
+              <div className="h-5 animate-pulse rounded bg-slate-100" />
+              <div className="h-5 w-2/3 animate-pulse rounded bg-slate-100" />
+            </div>
+          ) : policeStation ? (
+            <dl className="space-y-3">
+              <InfoRow label="경찰서" value={policeStation.name} />
+              <InfoRow label="주소" value={policeStation.address} />
+              <InfoRow label="전화" value={policeStation.phone} />
+              <InfoRow
+                label="거리"
+                value={
+                  policeStation.distanceM >= 1000
+                    ? `${(policeStation.distanceM / 1000).toFixed(1)} km`
+                    : `${policeStation.distanceM} m`
+                }
+              />
+            </dl>
+          ) : (
+            <p className="text-sm text-slate-500">
+              해당 위치 근처 경찰서 정보를 찾을 수 없습니다.
+            </p>
+          )}
+        </div>
+      ) : null}
+
+      <p className="mt-5 border-t border-slate-100 pt-4 text-xs text-slate-400">
+        {precise
+          ? "표시 좌표는 카카오 주소·GPS 기준 단일 핀입니다."
+          : "IP 추정 위치입니다. GPS 등록 시 동일 IP에 대해 오차 없이 표시됩니다."}
+      </p>
     </section>
   );
 }

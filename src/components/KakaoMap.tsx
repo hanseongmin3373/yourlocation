@@ -160,10 +160,11 @@ export default function KakaoMap({
       }
     }
 
-    if (label && exactPin) {
+    if (label) {
+      const isDistrict = !exactPin;
       const labelOverlay = new kakao.maps.CustomOverlay({
         position: center,
-        content: `<div style="padding:6px 10px;background:#fff;border-radius:8px;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.12);white-space:nowrap;border:1px solid #86efac;">${label}</div>`,
+        content: `<div style="padding:6px 10px;background:${isDistrict ? "#1e40af" : "#fff"};color:${isDistrict ? "#fff" : "#0f172a"};border-radius:8px;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.12);white-space:nowrap;border:1px solid ${isDistrict ? "#1e40af" : "#86efac"};">${label}</div>`,
         yAnchor: 2.4,
         zIndex: 3,
       });

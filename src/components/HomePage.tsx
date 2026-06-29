@@ -29,6 +29,7 @@ import {
   displayAccuracyRadiusM,
   enforceZeroErrorPolicy,
   formatDistrictLocationLabel,
+  formatMapPinLabel,
   isPreciseLocation,
   MAX_ALLOWED_ACCURACY_M,
 } from "@/lib/geo-accuracy";
@@ -57,6 +58,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
   const [geoLoading, setGeoLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [infoTitle, setInfoTitle] = useState("위치 정보");
+  const [showPolice, setShowPolice] = useState(false);
   const [policeStation, setPoliceStation] = useState<PoliceStationInfo | null>(
     null,
   );
@@ -71,6 +73,12 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
   const [gpsFailed, setGpsFailed] = useState(false);
   const autoGpsRequested = useRef(false);
   const skipAutoGps = useRef(false);
+
+  const resetPolice = useCallback(() => {
+    setShowPolice(false);
+    setPoliceStation(null);
+    setPoliceLoading(false);
+  }, []);
 
   const fetchPoliceStation = useCallback(
     async (
@@ -110,19 +118,29 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
       setLocationData(normalized);
       setResolvedVia(normalized.resolvedVia);
       setMapPosition({ lat: normalized.lat, lng: normalized.lon });
-      void fetchPoliceStation(normalized.lat, normalized.lon, {
-        sido: normalized.sido,
-        sigungu: normalized.sigungu,
-        dong: normalized.dong,
-      });
+      resetPolice();
       if (typeof remaining === "number") {
         window.dispatchEvent(
           new CustomEvent("usage-updated", { detail: { remaining } }),
         );
       }
     },
-    [fetchPoliceStation],
+    [resetPolice],
   );
+
+  const togglePoliceDisplay = useCallback(() => {
+    if (showPolice) {
+      setShowPolice(false);
+      return;
+    }
+    if (!locationData) return;
+    setShowPolice(true);
+    void fetchPoliceStation(locationData.lat, locationData.lon, {
+      sido: locationData.sido,
+      sigungu: locationData.sigungu,
+      dong: locationData.dong,
+    });
+  }, [showPolice, locationData, fetchPoliceStation]);
 
   const loadIpLocation = useCallback(
     async (ip: string, title?: string) => {
@@ -256,7 +274,6 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
         );
         setLocationData(null);
         setMapPosition(null);
-        setPoliceStation(null);
       } finally {
         setLoading(false);
       }
@@ -488,6 +505,9 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
       : formatDistrictLocationLabel(locationData) || locationData.address
     : null;
 
+  const mapPinLabel =
+    locationData && formatMapPinLabel(locationData, isPrecise);
+
   return (
     <div className="app-shell bg-white">
       <Header />
@@ -574,7 +594,19 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
           <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-1.5">
             <h2 className="text-xs font-bold text-emerald-800 sm:text-sm">지도</h2>
             {mapPosition && locationData && (
-              <div className="flex gap-2 text-[11px] font-medium sm:text-xs">
+              <div className="flex flex-wrap items-center justify-end gap-2 text-[11px] font-medium sm:text-xs">
+                <button
+                  type="button"
+                  onClick={togglePoliceDisplay}
+                  className={`rounded-md px-2 py-0.5 transition-colors ${
+                    showPolice
+                      ? "bg-blue-800 text-white"
+                      : "border border-slate-300 bg-white text-slate-600 hover:border-blue-400 hover:text-blue-800"
+                  }`}
+                  aria-pressed={showPolice}
+                >
+                  {showPolice ? "경찰서 숨기기" : "관할 경찰서"}
+                </button>
                 <a
                   href={`https://map.naver.com/v5/search/${locationData.lat},${locationData.lon}`}
                   target="_blank"
@@ -597,8 +629,8 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
           <div className="relative min-h-0 flex-1 bg-slate-100">
             <KakaoMap
               position={mapPosition}
-              label={isPrecise ? locationData?.address : undefined}
-              policeStation={policeStation}
+              label={mapPinLabel}
+              policeStation={showPolice ? policeStation : null}
               mapLevel={isPrecise ? 2 : resolvedVia === "gps" ? 4 : 6}
               accuracyRadiusM={mapAccuracyRadius}
               accuracyLabel={mapAccuracyLabel}
@@ -626,6 +658,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
               data={locationData}
               loading={loading || geoLoading}
               title={infoTitle}
+              showPolice={showPolice}
               policeStation={policeStation}
               policeLoading={policeLoading}
             />

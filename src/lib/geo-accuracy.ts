@@ -171,6 +171,21 @@ export function buildDistrictAddress(opts: {
   return parts.filter(Boolean).join(" ");
 }
 
+/** 지도 핀 라벨 — IP 추정은 시·군·구만, GPS/등록은 상세 주소 */
+export function formatMapPinLabel(
+  data: {
+    address?: string;
+    sigungu?: string;
+    city?: string;
+  },
+  precise: boolean,
+): string | undefined {
+  if (precise) {
+    return sanitizeGeoText(data.address) || undefined;
+  }
+  return sanitizeGeoText(data.sigungu || data.city) || undefined;
+}
+
 /** mylocation 스타일 — 시·군·구·동 (도로명 제외) */
 export function formatDistrictLocationLabel(data: {
   sido?: string;
