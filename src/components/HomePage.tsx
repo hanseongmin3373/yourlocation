@@ -507,8 +507,9 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
       : formatDistrictLocationLabel(locationData) || locationData.address
     : null;
 
-  const mapPinLabel =
-    locationData && formatMapPinLabel(locationData, isPrecise);
+  const mapPinLabel = locationData
+    ? formatMapPinLabel(locationData, isPrecise)
+    : undefined;
 
   return (
     <div className="app-shell bg-white">
