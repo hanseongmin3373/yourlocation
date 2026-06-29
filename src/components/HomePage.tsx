@@ -605,7 +605,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
                   }`}
                   aria-pressed={showPolice}
                 >
-                  {showPolice ? "경찰서 숨기기" : "관할 경찰서"}
+                  {showPolice ? "관할 정보 숨기기" : "관할 경찰서 정보"}
                 </button>
                 <a
                   href={`https://map.naver.com/v5/search/${locationData.lat},${locationData.lon}`}
@@ -630,7 +630,6 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
             <KakaoMap
               position={mapPosition}
               label={mapPinLabel}
-              policeStation={showPolice ? policeStation : null}
               mapLevel={isPrecise ? 2 : resolvedVia === "gps" ? 4 : 6}
               accuracyRadiusM={mapAccuracyRadius}
               accuracyLabel={mapAccuracyLabel}
