@@ -630,6 +630,7 @@ export default function HomePage({ initialIp = "" }: HomePageProps) {
             <KakaoMap
               position={mapPosition}
               label={mapPinLabel}
+              policeStation={showPolice ? policeStation : null}
               mapLevel={isPrecise ? 2 : resolvedVia === "gps" ? 4 : 6}
               accuracyRadiusM={mapAccuracyRadius}
               accuracyLabel={mapAccuracyLabel}

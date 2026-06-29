@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { MapPosition } from "@/lib/types";
+import type { MapPosition, PoliceStationInfo } from "@/lib/types";
 
 interface KakaoMapProps {
   position: MapPosition | null;
   label?: string;
+  /** showPolice가 true일 때만 전달 — 경찰서 핀·라벨·점선 */
+  policeStation?: PoliceStationInfo | null;
   heightClass?: string;
   /** 부모 flex/grid 셀 높이에 맞춤 */
   fillContainer?: boolean;
@@ -50,6 +52,7 @@ type MapOverlay = { setMap: (map: unknown | null) => void };
 export default function KakaoMap({
   position,
   label,
+  policeStation,
   heightClass = "h-[50vh] min-h-[280px]",
   fillContainer = false,
   fullBleed = false,
@@ -173,6 +176,45 @@ export default function KakaoMap({
     const bounds = new kakao.maps.LatLngBounds();
     bounds.extend(center);
 
+    const policeHasCoords =
+      policeStation != null &&
+      Number.isFinite(policeStation.lat) &&
+      Number.isFinite(policeStation.lng);
+
+    if (policeHasCoords) {
+      const policeCenter = new kakao.maps.LatLng(
+        policeStation.lat,
+        policeStation.lng,
+      );
+      bounds.extend(policeCenter);
+
+      const policeMarker = new kakao.maps.Marker({
+        position: policeCenter,
+        zIndex: 2,
+      });
+      policeMarker.setMap(map);
+      overlaysRef.current.push(policeMarker);
+
+      const policeOverlay = new kakao.maps.CustomOverlay({
+        position: policeCenter,
+        content: `<div style="padding:6px 10px;background:#1e3a8a;color:#fff;border-radius:8px;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.2);white-space:nowrap;">🚔 ${policeStation.name}</div>`,
+        yAnchor: 2.4,
+        zIndex: 3,
+      });
+      policeOverlay.setMap(map);
+      overlaysRef.current.push(policeOverlay);
+
+      const line = new kakao.maps.Polyline({
+        path: [center, policeCenter],
+        strokeWeight: 2,
+        strokeColor: "#64748b",
+        strokeOpacity: 0.7,
+        strokeStyle: "shortdash",
+      });
+      line.setMap(map);
+      overlaysRef.current.push(line);
+    }
+
     if (!exactPin && accuracyRadiusM && accuracyRadiusM > 0) {
       const latOffset = accuracyRadiusM / 111_320;
       const lngOffset =
@@ -195,7 +237,7 @@ export default function KakaoMap({
     (map as { setCenter: (c: unknown) => void; setLevel: (l: number) => void }).setCenter(center);
     (map as { setLevel: (l: number) => void }).setLevel(mapLevel);
 
-    if (!exactPin && accuracyRadiusM) {
+    if (policeHasCoords || (!exactPin && accuracyRadiusM)) {
       (map as { setBounds: (b: unknown, padding?: number) => void }).setBounds(
         bounds,
         48,
@@ -206,7 +248,7 @@ export default function KakaoMap({
       overlaysRef.current.forEach((overlay) => overlay.setMap(null));
       overlaysRef.current = [];
     };
-  }, [ready, position, label, mapLevel, accuracyRadiusM, accuracyLabel, circleVariant, exactPin, fillContainer]);
+  }, [ready, position, label, policeStation, mapLevel, accuracyRadiusM, accuracyLabel, circleVariant, exactPin, fillContainer]);
   if (error) {
     const isMissingKey = error.includes("설정되지 않았습니다");
     return (
